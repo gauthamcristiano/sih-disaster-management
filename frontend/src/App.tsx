@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./App.css";
+import RiskMap from "./components/RiskMap";
 
 type Factor = {
   name: string;
@@ -88,10 +89,10 @@ function calculateRisk(
   const vegetationScore = normalize(vegetationLoss, 0, 100);
 
   const weightedScore =
-    rainfallScore * 0.30 +
+    rainfallScore * 0.3 +
     slopeScore * 0.25 +
-    elevationScore * 0.10 +
-    moistureScore * 0.20 +
+    elevationScore * 0.1 +
+    moistureScore * 0.2 +
     vegetationScore * 0.15;
 
   const riskScore = Number((weightedScore * 100).toFixed(1));
@@ -178,11 +179,7 @@ function calculateRisk(
     });
   }
 
-  const confidence = clamp(
-    72 + factors.length * 4,
-    72,
-    92
-  );
+  const confidence = clamp(72 + factors.length * 4, 72, 92);
 
   return {
     risk_score: riskScore,
@@ -273,10 +270,9 @@ function App() {
             </h1>
 
             <p>
-              An AI-assisted landslide risk intelligence
-              platform designed to identify environmental
-              conditions associated with elevated landslide
-              risk and support earlier decision-making.
+              An AI-assisted landslide risk intelligence platform designed
+              to identify environmental conditions associated with elevated
+              landslide risk and support earlier decision-making.
             </p>
 
             <div className="hero-meta">
@@ -346,11 +342,31 @@ function App() {
           </div>
         </section>
 
+        <section className="map-section">
+          <div className="section-heading">
+            <div>
+              <span>02</span>
+              <h2>Geospatial Risk Intelligence</h2>
+            </div>
+
+            <p>
+              Regional risk visualization based on monitored
+              environmental indicators.
+            </p>
+          </div>
+
+          <RiskMap
+            location={location.name}
+            riskScore={result?.risk_score ?? 0}
+            riskLevel={result?.risk_level ?? "WAITING"}
+          />
+        </section>
+
         <section className="dashboard">
           <div className="panel">
             <div className="panel-heading">
               <div>
-                <span>02</span>
+                <span>03</span>
                 <h2>Environmental Signals</h2>
               </div>
 
@@ -422,7 +438,7 @@ function App() {
           <div className="panel assessment-panel">
             <div className="panel-heading">
               <div>
-                <span>03</span>
+                <span>04</span>
                 <h2>AI Assessment</h2>
               </div>
 
@@ -438,9 +454,8 @@ function App() {
                 <h3>Awaiting analysis</h3>
 
                 <p>
-                  Environmental indicators are ready.
-                  Run the risk engine to generate an
-                  assessment.
+                  Environmental indicators are ready. Run the risk
+                  engine to generate an assessment.
                 </p>
               </div>
             ) : (
@@ -495,37 +510,32 @@ function App() {
                 </div>
 
                 <div className="factors">
-                  {result.factors.map(
-                    (factor, index) => (
-                      <div
-                        className="factor"
-                        key={`${factor.name}-${index}`}
-                      >
-                        <div className="factor-number">
-                          {String(index + 1).padStart(
-                            2,
-                            "0"
-                          )}
-                        </div>
-
-                        <div className="factor-main">
-                          <strong>
-                            {factor.name}
-                          </strong>
-
-                          <span>
-                            {factor.value}
-                          </span>
-                        </div>
-
-                        <div
-                          className={`impact ${factor.impact.toLowerCase()}`}
-                        >
-                          {factor.impact}
-                        </div>
+                  {result.factors.map((factor, index) => (
+                    <div
+                      className="factor"
+                      key={`${factor.name}-${index}`}
+                    >
+                      <div className="factor-number">
+                        {String(index + 1).padStart(2, "0")}
                       </div>
-                    )
-                  )}
+
+                      <div className="factor-main">
+                        <strong>
+                          {factor.name}
+                        </strong>
+
+                        <span>
+                          {factor.value}
+                        </span>
+                      </div>
+
+                      <div
+                        className={`impact ${factor.impact.toLowerCase()}`}
+                      >
+                        {factor.impact}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -543,11 +553,10 @@ function App() {
             </h2>
 
             <p>
-              The platform is designed to combine rainfall,
-              terrain, soil moisture, vegetation and future
-              satellite/geospatial data to identify changing
-              risk zones and prioritize locations requiring
-              attention.
+              The platform is designed to combine rainfall, terrain,
+              soil moisture, vegetation and future satellite/geospatial
+              data to identify changing risk zones and prioritize
+              locations requiring attention.
             </p>
           </div>
 
