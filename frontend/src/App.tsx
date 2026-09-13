@@ -3,7 +3,7 @@ import "./App.css";
 
 type Factor = {
   name: string;
-  impact: string;
+  impact: "HIGH" | "MEDIUM" | "LOW";
   value: string;
 };
 
@@ -64,6 +64,135 @@ const locations: Location[] = [
   },
 ];
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalize(value: number, min: number, max: number) {
+  if (max <= min) return 0;
+
+  return clamp((value - min) / (max - min), 0, 1);
+}
+
+function calculateRisk(
+  rainfall: number,
+  slope: number,
+  elevation: number,
+  soilMoisture: number,
+  vegetationLoss: number
+): RiskResult {
+  const rainfallScore = normalize(rainfall, 0, 300);
+  const slopeScore = normalize(slope, 0, 45);
+  const elevationScore = normalize(elevation, 0, 2500);
+  const moistureScore = normalize(soilMoisture, 0, 100);
+  const vegetationScore = normalize(vegetationLoss, 0, 100);
+
+  const weightedScore =
+    rainfallScore * 0.30 +
+    slopeScore * 0.25 +
+    elevationScore * 0.10 +
+    moistureScore * 0.20 +
+    vegetationScore * 0.15;
+
+  const riskScore = Number((weightedScore * 100).toFixed(1));
+
+  let riskLevel = "LOW";
+  let severity = "Normal monitoring";
+
+  if (riskScore >= 75) {
+    riskLevel = "CRITICAL";
+    severity = "Immediate assessment recommended";
+  } else if (riskScore >= 50) {
+    riskLevel = "HIGH";
+    severity = "Early warning recommended";
+  } else if (riskScore >= 25) {
+    riskLevel = "MODERATE";
+    severity = "Enhanced monitoring recommended";
+  }
+
+  const factors: Factor[] = [];
+
+  if (rainfallScore >= 0.7) {
+    factors.push({
+      name: "Heavy rainfall",
+      impact: "HIGH",
+      value: `${rainfall.toFixed(0)} mm/day`,
+    });
+  } else if (rainfallScore >= 0.45) {
+    factors.push({
+      name: "Elevated rainfall",
+      impact: "MEDIUM",
+      value: `${rainfall.toFixed(0)} mm/day`,
+    });
+  }
+
+  if (slopeScore >= 0.7) {
+    factors.push({
+      name: "Steep terrain",
+      impact: "HIGH",
+      value: `${slope.toFixed(1)}°`,
+    });
+  } else if (slopeScore >= 0.45) {
+    factors.push({
+      name: "Moderate terrain slope",
+      impact: "MEDIUM",
+      value: `${slope.toFixed(1)}°`,
+    });
+  }
+
+  if (moistureScore >= 0.7) {
+    factors.push({
+      name: "High soil moisture",
+      impact: "HIGH",
+      value: `${soilMoisture.toFixed(0)}%`,
+    });
+  } else if (moistureScore >= 0.45) {
+    factors.push({
+      name: "Elevated soil moisture",
+      impact: "MEDIUM",
+      value: `${soilMoisture.toFixed(0)}%`,
+    });
+  }
+
+  if (vegetationScore >= 0.6) {
+    factors.push({
+      name: "Vegetation loss",
+      impact: "HIGH",
+      value: `${vegetationLoss.toFixed(0)}%`,
+    });
+  }
+
+  if (elevationScore >= 0.7) {
+    factors.push({
+      name: "High-elevation terrain",
+      impact: "MEDIUM",
+      value: `${elevation.toFixed(0)} m`,
+    });
+  }
+
+  if (factors.length === 0) {
+    factors.push({
+      name: "No dominant indicator",
+      impact: "LOW",
+      value: "Stable",
+    });
+  }
+
+  const confidence = clamp(
+    72 + factors.length * 4,
+    72,
+    92
+  );
+
+  return {
+    risk_score: riskScore,
+    risk_level: riskLevel,
+    severity,
+    confidence,
+    factors,
+  };
+}
+
 function App() {
   const [locationIndex, setLocationIndex] = useState(0);
 
@@ -77,7 +206,6 @@ function App() {
 
   const [result, setResult] = useState<RiskResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
   const selectLocation = (index: number) => {
     const selected = locations[index];
@@ -89,45 +217,23 @@ function App() {
     setSoilMoisture(selected.moisture);
     setVegetationLoss(selected.vegetation);
     setResult(null);
-    setError("");
   };
 
-  const analyseRisk = async () => {
+  const analyseRisk = () => {
     setLoading(true);
-    setError("");
 
-    try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/risk",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            rainfall,
-            slope,
-            elevation,
-            soil_moisture: soilMoisture,
-            vegetation_loss: vegetationLoss,
-          }),
-        }
+    setTimeout(() => {
+      const analysis = calculateRisk(
+        rainfall,
+        slope,
+        elevation,
+        soilMoisture,
+        vegetationLoss
       );
 
-      if (!response.ok) {
-        throw new Error("Risk engine unavailable");
-      }
-
-      const data: RiskResult = await response.json();
-
-      setResult(data);
-    } catch {
-      setError(
-        "Risk engine unavailable. Please make sure the backend is running."
-      );
-    } finally {
+      setResult(analysis);
       setLoading(false);
-    }
+    }, 900);
   };
 
   return (
@@ -167,10 +273,10 @@ function App() {
             </h1>
 
             <p>
-              An AI-assisted monitoring platform designed to
-              identify environmental conditions associated with
-              elevated landslide risk and support earlier
-              decision-making.
+              An AI-assisted landslide risk intelligence
+              platform designed to identify environmental
+              conditions associated with elevated landslide
+              risk and support earlier decision-making.
             </p>
 
             <div className="hero-meta">
@@ -197,9 +303,7 @@ function App() {
             <div className="contour contour-3" />
             <div className="contour contour-4" />
 
-            <div className="mountain-shape">
-              ▲
-            </div>
+            <div className="mountain-shape">▲</div>
 
             <div className="coordinate">
               23.1645° N
@@ -236,9 +340,7 @@ function App() {
 
                 <strong>{item.name}</strong>
 
-                <span className="location-arrow">
-                  →
-                </span>
+                <span className="location-arrow">→</span>
               </button>
             ))}
           </div>
@@ -315,12 +417,6 @@ function App() {
 
               <strong>→</strong>
             </button>
-
-            {error && (
-              <div className="error-message">
-                {error}
-              </div>
-            )}
           </div>
 
           <div className="panel assessment-panel">
@@ -343,7 +439,8 @@ function App() {
 
                 <p>
                   Environmental indicators are ready.
-                  Run the risk engine to generate an assessment.
+                  Run the risk engine to generate an
+                  assessment.
                 </p>
               </div>
             ) : (
@@ -370,6 +467,7 @@ function App() {
                 <div className="confidence">
                   <div>
                     <span>MODEL CONFIDENCE</span>
+
                     <strong>
                       {result.confidence}%
                     </strong>
@@ -401,7 +499,7 @@ function App() {
                     (factor, index) => (
                       <div
                         className="factor"
-                        key={index}
+                        key={`${factor.name}-${index}`}
                       >
                         <div className="factor-number">
                           {String(index + 1).padStart(
@@ -435,9 +533,7 @@ function App() {
         </section>
 
         <section className="early-warning">
-          <div className="warning-icon">
-            !
-          </div>
+          <div className="warning-icon">!</div>
 
           <div>
             <span>EARLY WARNING LAYER</span>
@@ -447,25 +543,23 @@ function App() {
             </h2>
 
             <p>
-              The next stage of the platform will combine
-              real-time satellite, rainfall and geospatial
-              data to automatically identify changing risk
-              zones and prioritize locations requiring
+              The platform is designed to combine rainfall,
+              terrain, soil moisture, vegetation and future
+              satellite/geospatial data to identify changing
+              risk zones and prioritize locations requiring
               attention.
             </p>
           </div>
 
           <div className="warning-status">
-            <span>DEVELOPMENT STATUS</span>
+            <span>DEMO STATUS</span>
             <strong>PHASE 01</strong>
           </div>
         </section>
       </main>
 
       <footer>
-        <span>
-          LANDSLIDE AI · SIH26002
-        </span>
+        <span>LANDSLIDE AI · SIH26002</span>
 
         <span>
           AI · GIS · REMOTE SENSING · EARLY WARNING
