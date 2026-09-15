@@ -2,13 +2,10 @@ import { useMemo, useState } from "react";
 import "./App.css";
 import RiskMap from "./components/RiskMap";
 
-type FactorImpact = "HIGH" | "MEDIUM" | "LOW";
-
 type Factor = {
   name: string;
-  impact: FactorImpact;
+  impact: "HIGH" | "MEDIUM" | "LOW";
   value: string;
-  contribution: number;
 };
 
 type RiskResult = {
@@ -17,9 +14,17 @@ type RiskResult = {
   severity: string;
   confidence: number;
   factors: Factor[];
+  inputs: {
+    rainfall: number;
+    slope: number;
+    elevation: number;
+    soil_moisture: number;
+    vegetation_loss: number;
+  };
 };
 
 type Location = {
+  id: number;
   name: string;
   state: string;
   rainfall: number;
@@ -27,315 +32,247 @@ type Location = {
   elevation: number;
   moisture: number;
   vegetation: number;
-  latitude: string;
-  longitude: string;
+  latitude: number;
+  longitude: number;
   population: string;
 };
 
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
 const locations: Location[] = [
   {
+    id: 1,
     name: "Aizawl",
     state: "Mizoram",
-    rainfall: 215,
-    slope: 36,
+    rainfall: 228,
+    slope: 38,
     elevation: 1132,
-    moisture: 82,
-    vegetation: 31,
-    latitude: "23.7271° N",
-    longitude: "92.7176° E",
+    moisture: 76,
+    vegetation: 32,
+    latitude: 23.7271,
+    longitude: 92.7176,
     population: "293K",
   },
   {
+    id: 2,
     name: "Gangtok",
     state: "Sikkim",
-    rainfall: 190,
-    slope: 38,
+    rainfall: 185,
+    slope: 34,
     elevation: 1650,
-    moisture: 76,
-    vegetation: 27,
-    latitude: "27.3389° N",
-    longitude: "88.6065° E",
+    moisture: 68,
+    vegetation: 24,
+    latitude: 27.3389,
+    longitude: 88.6065,
     population: "100K",
   },
   {
+    id: 3,
     name: "Shillong",
     state: "Meghalaya",
-    rainfall: 245,
+    rainfall: 205,
     slope: 29,
     elevation: 1496,
-    moisture: 86,
-    vegetation: 24,
-    latitude: "25.5788° N",
-    longitude: "91.8933° E",
-    population: "143K",
+    moisture: 72,
+    vegetation: 27,
+    latitude: 25.5788,
+    longitude: 91.8933,
+    population: "354K",
   },
   {
+    id: 4,
     name: "Itanagar",
     state: "Arunachal Pradesh",
-    rainfall: 225,
-    slope: 34,
-    elevation: 320,
-    moisture: 84,
-    vegetation: 36,
-    latitude: "27.0844° N",
-    longitude: "93.6053° E",
+    rainfall: 240,
+    slope: 36,
+    elevation: 750,
+    moisture: 81,
+    vegetation: 35,
+    latitude: 27.0844,
+    longitude: 93.6053,
     population: "59K",
   },
 ];
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
+function getRiskClass(level: string) {
+  return level.toLowerCase();
 }
 
-function normalize(value: number, min: number, max: number) {
-  if (max <= min) return 0;
-  return clamp((value - min) / (max - min), 0, 1);
-}
-
-function calculateRisk(
-  rainfall: number,
-  slope: number,
-  soilMoisture: number,
-  vegetationLoss: number,
-): RiskResult {
-  /*
-   * DEMO MODEL
-   * This is intentionally presented as a prototype scoring model.
-   * A production system would replace these weights with a trained,
-   * validated ML model using real geospatial / meteorological datasets.
-   */
-
-  const rainfallScore = normalize(rainfall, 0, 300);
-  const slopeScore = normalize(slope, 0, 45);
-  const moistureScore = normalize(soilMoisture, 0, 100);
-  const vegetationScore = normalize(vegetationLoss, 0, 100);
-
-  const rainfallContribution = rainfallScore * 30;
-  const slopeContribution = slopeScore * 30;
-  const moistureContribution = moistureScore * 25;
-  const vegetationContribution = vegetationScore * 15;
-
-  const weightedScore =
-    rainfallContribution +
-    slopeContribution +
-    moistureContribution +
-    vegetationContribution;
-
-  const riskScore = Number(clamp(weightedScore, 0, 100).toFixed(1));
-
-  let riskLevel: RiskResult["risk_level"] = "LOW";
-  let severity = "Continue routine monitoring.";
-  let confidence = 76;
-
-  if (riskScore >= 75) {
-    riskLevel = "CRITICAL";
-    severity = "Immediate assessment and local warning recommended.";
-    confidence = 92;
-  } else if (riskScore >= 50) {
-    riskLevel = "HIGH";
-    severity = "Early warning and field verification recommended.";
-    confidence = 88;
-  } else if (riskScore >= 25) {
-    riskLevel = "MODERATE";
-    severity = "Enhanced monitoring recommended.";
-    confidence = 82;
-  }
-
-  const factors: Factor[] = [];
-
-  if (rainfallScore >= 0.7) {
-    factors.push({
-      name: "Rainfall loading",
-      impact: "HIGH",
-      value: `${rainfall.toFixed(0)} mm/day`,
-      contribution: Number(rainfallContribution.toFixed(1)),
-    });
-  } else if (rainfallScore >= 0.45) {
-    factors.push({
-      name: "Elevated rainfall",
-      impact: "MEDIUM",
-      value: `${rainfall.toFixed(0)} mm/day`,
-      contribution: Number(rainfallContribution.toFixed(1)),
-    });
-  }
-
-  if (slopeScore >= 0.7) {
-    factors.push({
-      name: "Steep terrain",
-      impact: "HIGH",
-      value: `${slope.toFixed(1)}°`,
-      contribution: Number(slopeContribution.toFixed(1)),
-    });
-  } else if (slopeScore >= 0.45) {
-    factors.push({
-      name: "Terrain slope",
-      impact: "MEDIUM",
-      value: `${slope.toFixed(1)}°`,
-      contribution: Number(slopeContribution.toFixed(1)),
-    });
-  }
-
-  if (moistureScore >= 0.7) {
-    factors.push({
-      name: "Soil saturation",
-      impact: "HIGH",
-      value: `${soilMoisture.toFixed(0)}%`,
-      contribution: Number(moistureContribution.toFixed(1)),
-    });
-  } else if (moistureScore >= 0.45) {
-    factors.push({
-      name: "Elevated soil moisture",
-      impact: "MEDIUM",
-      value: `${soilMoisture.toFixed(0)}%`,
-      contribution: Number(moistureContribution.toFixed(1)),
-    });
-  }
-
-  if (vegetationScore >= 0.6) {
-    factors.push({
-      name: "Vegetation disturbance",
-      impact: "HIGH",
-      value: `${vegetationLoss.toFixed(0)}% loss`,
-      contribution: Number(vegetationContribution.toFixed(1)),
-    });
-  } else if (vegetationScore >= 0.35) {
-    factors.push({
-      name: "Vegetation change",
-      impact: "MEDIUM",
-      value: `${vegetationLoss.toFixed(0)}% loss`,
-      contribution: Number(vegetationContribution.toFixed(1)),
-    });
-  }
-
-  if (factors.length === 0) {
-    factors.push({
-      name: "No dominant indicator",
-      impact: "LOW",
-      value: "Stable conditions",
-      contribution: Number(weightedScore.toFixed(1)),
-    });
-  }
-
-  factors.sort((a, b) => b.contribution - a.contribution);
-
+function createLocalInitialResult(location: Location): RiskResult {
   return {
-    risk_score: riskScore,
-    risk_level: riskLevel,
-    severity,
-    confidence,
-    factors,
+    risk_score: 0,
+    risk_level: "LOW",
+    severity: "Waiting for analysis",
+    confidence: 0,
+    factors: [],
+    inputs: {
+      rainfall: location.rainfall,
+      slope: location.slope,
+      elevation: location.elevation,
+      soil_moisture: location.moisture,
+      vegetation_loss: location.vegetation,
+    },
   };
 }
 
 function App() {
-  const [locationIndex, setLocationIndex] = useState(0);
-  const [result, setResult] = useState<RiskResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [simulationMode, setSimulationMode] = useState(false);
-
-  const location = locations[locationIndex];
-
-  const [rainfall, setRainfall] = useState(location.rainfall);
-  const [slope, setSlope] = useState(location.slope);
-  const [elevation, setElevation] = useState(location.elevation);
-  const [soilMoisture, setSoilMoisture] = useState(location.moisture);
-  const [vegetationLoss, setVegetationLoss] = useState(location.vegetation);
-
-  const livePreview = useMemo(
-    () =>
-      calculateRisk(
-        rainfall,
-        slope,
-        soilMoisture,
-        vegetationLoss,
-      ),
-    [rainfall, slope, soilMoisture, vegetationLoss],
+  const [selectedLocation, setSelectedLocation] = useState<Location>(
+    locations[0],
   );
 
-  const selectLocation = (index: number) => {
-    const selected = locations[index];
+  const [rainfall, setRainfall] = useState(locations[0].rainfall);
+  const [slope, setSlope] = useState(locations[0].slope);
+  const [elevation, setElevation] = useState(locations[0].elevation);
+  const [soilMoisture, setSoilMoisture] = useState(
+    locations[0].moisture,
+  );
+  const [vegetationLoss, setVegetationLoss] = useState(
+    locations[0].vegetation,
+  );
 
-    setLocationIndex(index);
-    setRainfall(selected.rainfall);
-    setSlope(selected.slope);
-    setElevation(selected.elevation);
-    setSoilMoisture(selected.moisture);
-    setVegetationLoss(selected.vegetation);
-    setResult(null);
-    setSimulationMode(false);
+  const [result, setResult] = useState<RiskResult>(
+    createLocalInitialResult(locations[0]),
+  );
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [simulationActive, setSimulationActive] = useState(false);
+
+  const inputPayload = useMemo(
+    () => ({
+      rainfall,
+      slope,
+      elevation,
+      soil_moisture: soilMoisture,
+      vegetation_loss: vegetationLoss,
+    }),
+    [
+      rainfall,
+      slope,
+      elevation,
+      soilMoisture,
+      vegetationLoss,
+    ],
+  );
+
+  const runRiskAnalysis = async (
+    payload = inputPayload,
+    simulation = false,
+  ) => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_URL}/api/risk`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        let message = `Backend returned HTTP ${response.status}`;
+
+        try {
+          const errorData = await response.json();
+
+          if (errorData?.detail) {
+            message = Array.isArray(errorData.detail)
+              ? errorData.detail
+                  .map((item: any) => item.msg)
+                  .join(", ")
+              : String(errorData.detail);
+          }
+        } catch {
+          // Keep default error message.
+        }
+
+        throw new Error(message);
+      }
+
+      const data: RiskResult = await response.json();
+
+      setResult(data);
+      setSimulationActive(simulation);
+    } catch (err) {
+      console.error("Risk analysis failed:", err);
+
+      setError(
+        "Unable to reach the risk engine. Make sure the FastAPI backend is running on port 8000.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const analyseRisk = () => {
-    setLoading(true);
+  const handleLocationChange = (location: Location) => {
+    setSelectedLocation(location);
 
-    window.setTimeout(() => {
-      const analysis = calculateRisk(
-        rainfall,
-        slope,
-        soilMoisture,
-        vegetationLoss,
-      );
+    setRainfall(location.rainfall);
+    setSlope(location.slope);
+    setElevation(location.elevation);
+    setSoilMoisture(location.moisture);
+    setVegetationLoss(location.vegetation);
 
-      setResult(analysis);
-      setLoading(false);
-    }, 850);
+    setSimulationActive(false);
+    setError("");
+
+    setResult(createLocalInitialResult(location));
   };
 
-  const simulateHeavyRain = () => {
-    setSimulationMode(true);
-    setLoading(true);
+  const simulateHeavyRain = async () => {
+    const simulatedRainfall = Math.min(
+      500,
+      rainfall + 65,
+    );
 
-    window.setTimeout(() => {
-      const simulatedRainfall = clamp(rainfall + 65, 0, 300);
-      const simulatedMoisture = clamp(soilMoisture + 13, 0, 100);
+    const simulatedMoisture = Math.min(
+      100,
+      soilMoisture + 13,
+    );
 
-      setRainfall(simulatedRainfall);
-      setSoilMoisture(simulatedMoisture);
+    const payload = {
+      rainfall: simulatedRainfall,
+      slope,
+      elevation,
+      soil_moisture: simulatedMoisture,
+      vegetation_loss: vegetationLoss,
+    };
 
-      const simulatedResult = calculateRisk(
-        simulatedRainfall,
-        slope,
-        simulatedMoisture,
-        vegetationLoss,
-      );
-
-      setResult(simulatedResult);
-      setLoading(false);
-    }, 1100);
+    await runRiskAnalysis(payload, true);
   };
 
   const resetSimulation = () => {
-    const selected = locations[locationIndex];
+    setRainfall(selectedLocation.rainfall);
+    setSlope(selectedLocation.slope);
+    setElevation(selectedLocation.elevation);
+    setSoilMoisture(selectedLocation.moisture);
+    setVegetationLoss(selectedLocation.vegetation);
 
-    setSimulationMode(false);
-    setRainfall(selected.rainfall);
-    setSlope(selected.slope);
-    setElevation(selected.elevation);
-    setSoilMoisture(selected.moisture);
-    setVegetationLoss(selected.vegetation);
-    setResult(null);
+    setSimulationActive(false);
+    setError("");
+
+    setResult(createLocalInitialResult(selectedLocation));
   };
 
-  const activeResult = result ?? livePreview;
-
-  const alertState =
-    activeResult.risk_level === "CRITICAL"
-      ? "CRITICAL"
-      : activeResult.risk_level === "HIGH"
-        ? "HIGH"
-        : activeResult.risk_level === "MODERATE"
-          ? "WATCH"
-          : "NORMAL";
+  const riskLevel = result.risk_level || "LOW";
+  const riskClass = getRiskClass(riskLevel);
 
   return (
     <div className="app">
+      {/* =====================================================
+          HEADER
+      ====================================================== */}
+
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">L</div>
 
           <div>
             <div className="brand-name">
-              LANDSLIDE<span>AI</span>
+              LANDSLIDE AI
             </div>
 
             <div className="brand-subtitle">
@@ -344,18 +281,21 @@ function App() {
           </div>
         </div>
 
-        <div className="top-status">
-          <span className="online-dot" />
-          INTELLIGENCE ENGINE ONLINE
+        <div className="system-status">
+          <span className="status-dot" />
+          AI ENGINE ONLINE
         </div>
       </header>
 
+      {/* =====================================================
+          HERO
+      ====================================================== */}
+
       <main>
-        {/* HERO */}
         <section className="hero">
-          <div className="hero-content">
-            <div className="hero-label">
-              SIH26002 · NORTH EASTERN REGION · PROTOTYPE
+          <div className="hero-copy">
+            <div className="eyebrow">
+              SIH26002 · NORTH EASTERN REGION
             </div>
 
             <h1>
@@ -365,201 +305,255 @@ function App() {
             </h1>
 
             <p>
-              An AI-assisted landslide risk intelligence platform that
-              combines environmental signals into an explainable risk
-              assessment for earlier decision-making.
+              AI-assisted landslide risk intelligence combining
+              environmental signals, terrain conditions and
+              explainable risk assessment.
             </p>
 
-            <div className="hero-meta">
-              <div>
+            <div className="hero-actions">
+              <button
+                className="primary-button"
+                onClick={() => runRiskAnalysis()}
+                disabled={loading}
+              >
+                {loading
+                  ? "ANALYZING..."
+                  : "RUN RISK ANALYSIS"}
+              </button>
+
+              <div className="hero-location">
                 <span>MONITORING</span>
-                <strong>REGIONAL</strong>
-              </div>
-
-              <div>
-                <span>ENGINE</span>
-                <strong>RISK MODEL v1</strong>
-              </div>
-
-              <div>
-                <span>MODE</span>
-                <strong>
-                  {simulationMode ? "SIMULATION" : "ANALYSIS"}
-                </strong>
+                <strong>{selectedLocation.name}</strong>
+                <small>{selectedLocation.state}</small>
               </div>
             </div>
           </div>
 
-          <div className="hero-visual">
-            <div className="contour contour-1" />
-            <div className="contour contour-2" />
-            <div className="contour contour-3" />
-            <div className="contour contour-4" />
-
-            <div className="hero-orbit orbit-one" />
-            <div className="hero-orbit orbit-two" />
-
-            <div className="mountain-shape">▲</div>
-
-            <div className="hero-signal signal-one">
-              <span />
-              RAIN
+          <div className="hero-risk">
+            <div className="hero-risk-label">
+              CURRENT MODEL RISK
             </div>
 
-            <div className="hero-signal signal-two">
-              <span />
-              TERRAIN
+            <div
+              className={`hero-risk-score ${riskClass}`}
+            >
+              {result.risk_score.toFixed(1)}
             </div>
 
-            <div className="hero-signal signal-three">
-              <span />
-              SOIL
+            <div
+              className={`hero-risk-level ${riskClass}`}
+            >
+              {riskLevel}
             </div>
 
-            <div className="coordinate">
-              {location.latitude}
-              <br />
-              {location.longitude}
-            </div>
-
-            <div className="hero-risk">
-              <span>CURRENT MODEL RISK</span>
-              <strong>{activeResult.risk_score}</strong>
-              <small>/100</small>
+            <div className="hero-risk-caption">
+              {loading
+                ? "Processing environmental signals"
+                : result.severity}
             </div>
           </div>
         </section>
 
-        {/* REGIONAL OVERVIEW */}
-        <section className="overview-section">
-          <div className="overview-heading">
+        {/* =====================================================
+            ERROR
+        ====================================================== */}
+
+        {error && (
+          <div className="error-banner">
             <div>
-              <span>00</span>
-              <h2>Regional Intelligence</h2>
+              <strong>RISK ENGINE CONNECTION ERROR</strong>
+              <span>{error}</span>
             </div>
 
-            <div className="overview-mode">
-              <span className="status-dot" />
-              PROTOTYPE DATA LAYER
+            <button
+              onClick={() => runRiskAnalysis()}
+            >
+              RETRY
+            </button>
+          </div>
+        )}
+
+        {/* =====================================================
+            REGIONAL OVERVIEW
+        ====================================================== */}
+
+        <section className="overview-section">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">
+                01 · REGIONAL INTELLIGENCE
+              </span>
+
+              <h2>
+                The slope gives signals.
+              </h2>
             </div>
+
+            <p>
+              Environmental indicators are converted into
+              interpretable risk intelligence for rapid
+              decision-making.
+            </p>
           </div>
 
           <div className="overview-grid">
             <div className="overview-card">
-              <span>MONITORED ZONES</span>
-              <strong>04</strong>
-              <small>Northeast locations</small>
-            </div>
-
-            <div className="overview-card">
-              <span>ACTIVE WATCH</span>
+              <span>MONITORING ZONES</span>
               <strong>{locations.length}</strong>
-              <small>Risk assessment zones</small>
+              <small>Priority locations</small>
             </div>
 
             <div className="overview-card">
-              <span>SELECTED ZONE</span>
-              <strong>{location.name}</strong>
-              <small>{location.state}</small>
+              <span>ACTIVE LOCATION</span>
+              <strong>{selectedLocation.name}</strong>
+              <small>{selectedLocation.state}</small>
             </div>
 
-            <div className={`overview-card risk-card ${activeResult.risk_level.toLowerCase()}`}>
-              <span>REGIONAL SIGNAL</span>
-              <strong>{alertState}</strong>
-              <small>{activeResult.risk_score}/100 current model</small>
+            <div className="overview-card">
+              <span>RISK STATUS</span>
+              <strong className={riskClass}>
+                {riskLevel}
+              </strong>
+              <small>
+                Score {result.risk_score.toFixed(1)} / 100
+              </small>
+            </div>
+
+            <div className="overview-card">
+              <span>MODEL CONFIDENCE</span>
+              <strong>
+                {result.confidence
+                  ? `${result.confidence}%`
+                  : "—"}
+              </strong>
+              <small>
+                Prototype engine output
+              </small>
             </div>
           </div>
         </section>
 
-        {/* LOCATIONS */}
+        {/* =====================================================
+            MONITORING ZONES
+        ====================================================== */}
+
         <section className="location-section">
           <div className="section-heading">
             <div>
-              <span>01</span>
-              <h2>Monitoring Zones</h2>
+              <span className="section-kicker">
+                02 · MONITORING ZONES
+              </span>
+
+              <h2>
+                One region. Multiple risk surfaces.
+              </h2>
             </div>
 
             <p>
-              Select a monitored location in the Northeast.
+              Select a monitored location to load its
+              environmental conditions.
             </p>
           </div>
 
           <div className="location-grid">
-            {locations.map((item, index) => {
-              const preview = calculateRisk(
-                item.rainfall,
-                item.slope,
-                item.moisture,
-                item.vegetation,
-              );
+            {locations.map((location) => (
+              <button
+                key={location.id}
+                className={`location-card ${
+                  selectedLocation.id === location.id
+                    ? "selected"
+                    : ""
+                }`}
+                onClick={() =>
+                  handleLocationChange(location)
+                }
+              >
+                <div className="location-number">
+                  0{location.id}
+                </div>
 
-              return (
-                <button
-                  className={`location-card ${
-                    locationIndex === index ? "selected" : ""
-                  }`}
-                  key={item.name}
-                  onClick={() => selectLocation(index)}
-                >
-                  <span className="location-state">
-                    {item.state}
+                <div className="location-info">
+                  <strong>{location.name}</strong>
+                  <span>{location.state}</span>
+                </div>
+
+                <div className="location-meta">
+                  <span>
+                    {location.rainfall} mm
                   </span>
-
-                  <strong>{item.name}</strong>
-
-                  <div className="location-risk">
-                    <span>MODEL RISK</span>
-                    <b>{preview.risk_score}</b>
-                  </div>
-
-                  <span className="location-arrow">→</span>
-                </button>
-              );
-            })}
+                  <small>rainfall</small>
+                </div>
+              </button>
+            ))}
           </div>
         </section>
 
-        {/* MAP */}
+        {/* =====================================================
+            MAP
+        ====================================================== */}
+
         <section className="map-section">
           <div className="section-heading">
             <div>
-              <span>02</span>
-              <h2>Geospatial Risk Intelligence</h2>
+              <span className="section-kicker">
+                03 · GEOSPATIAL INTELLIGENCE
+              </span>
+
+              <h2>
+                One map. One score. One decision.
+              </h2>
             </div>
 
             <p>
-              Spatial view of monitored environmental risk signals.
+              Spatial monitoring layer for high-risk terrain.
             </p>
           </div>
 
-          <RiskMap
-            location={location.name}
-            riskScore={activeResult.risk_score}
-            riskLevel={activeResult.risk_level}
-          />
+          <div className="risk-map">
+            <RiskMap
+              location={selectedLocation.name}
+              riskScore={result.risk_score}
+              riskLevel={riskLevel}
+            />
+          </div>
         </section>
 
-        {/* DASHBOARD */}
+        {/* =====================================================
+            ENVIRONMENTAL SIGNALS
+        ====================================================== */}
+
         <section className="dashboard">
           <div className="panel">
-            <div className="panel-heading">
+            <div className="panel-header">
               <div>
-                <span>03</span>
-                <h2>Environmental Signals</h2>
+                <span className="section-kicker">
+                  04 · ENVIRONMENTAL SIGNALS
+                </span>
+
+                <h2>
+                  Observe the slope.
+                </h2>
               </div>
 
-              <small>{location.name.toUpperCase()}</small>
+              <span className="panel-status">
+                INPUT STREAM
+              </span>
             </div>
 
             <div className="signal-summary">
               <div>
-                <span>ZONE</span>
-                <strong>{location.name}</strong>
+                <span>LOCATION</span>
+                <strong>
+                  {selectedLocation.name}
+                </strong>
               </div>
 
               <div>
-                <span>STATE</span>
-                <strong>{location.state}</strong>
+                <span>LAT / LONG</span>
+                <strong>
+                  {selectedLocation.latitude.toFixed(3)}° /
+                  {selectedLocation.longitude.toFixed(3)}°
+                </strong>
               </div>
 
               <div>
@@ -568,55 +562,154 @@ function App() {
               </div>
             </div>
 
-            <Parameter
-              label="Rainfall loading"
-              value={`${rainfall} mm/day`}
-              min={0}
-              max={300}
-              number={rainfall}
-              onChange={setRainfall}
-            />
+            <div className="parameters">
+              <div className="parameter">
+                <div className="parameter-header">
+                  <label>Rainfall</label>
+                  <strong>
+                    {rainfall} mm/day
+                  </strong>
+                </div>
 
-            <Parameter
-              label="Terrain slope"
-              value={`${slope}°`}
-              min={0}
-              max={45}
-              number={slope}
-              onChange={setSlope}
-            />
+                <input
+                  type="range"
+                  min="0"
+                  max="500"
+                  value={rainfall}
+                  onChange={(event) =>
+                    setRainfall(
+                      Number(event.target.value),
+                    )
+                  }
+                />
 
-            <Parameter
-              label="Soil moisture"
-              value={`${soilMoisture}%`}
-              min={0}
-              max={100}
-              number={soilMoisture}
-              onChange={setSoilMoisture}
-            />
+                <div className="range-labels">
+                  <span>0</span>
+                  <span>500 mm</span>
+                </div>
+              </div>
 
-            <Parameter
-              label="Vegetation loss"
-              value={`${vegetationLoss}%`}
-              min={0}
-              max={100}
-              number={vegetationLoss}
-              onChange={setVegetationLoss}
-            />
+              <div className="parameter">
+                <div className="parameter-header">
+                  <label>Terrain slope</label>
+                  <strong>{slope}°</strong>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max="90"
+                  value={slope}
+                  onChange={(event) =>
+                    setSlope(
+                      Number(event.target.value),
+                    )
+                  }
+                />
+
+                <div className="range-labels">
+                  <span>0°</span>
+                  <span>90°</span>
+                </div>
+              </div>
+
+              <div className="parameter">
+                <div className="parameter-header">
+                  <label>Soil moisture</label>
+                  <strong>
+                    {soilMoisture}%
+                  </strong>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={soilMoisture}
+                  onChange={(event) =>
+                    setSoilMoisture(
+                      Number(event.target.value),
+                    )
+                  }
+                />
+
+                <div className="range-labels">
+                  <span>Dry</span>
+                  <span>Saturated</span>
+                </div>
+              </div>
+
+              <div className="parameter">
+                <div className="parameter-header">
+                  <label>Vegetation loss</label>
+                  <strong>
+                    {vegetationLoss}%
+                  </strong>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={vegetationLoss}
+                  onChange={(event) =>
+                    setVegetationLoss(
+                      Number(event.target.value),
+                    )
+                  }
+                />
+
+                <div className="range-labels">
+                  <span>0%</span>
+                  <span>100%</span>
+                </div>
+              </div>
+
+              <div className="parameter">
+                <div className="parameter-header">
+                  <label>Elevation</label>
+                  <strong>
+                    {elevation} m
+                  </strong>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max="5000"
+                  value={elevation}
+                  onChange={(event) =>
+                    setElevation(
+                      Number(event.target.value),
+                    )
+                  }
+                />
+
+                <div className="range-labels">
+                  <span>0 m</span>
+                  <span>5000 m</span>
+                </div>
+
+                <small className="parameter-note">
+                  Terrain context — not directly weighted
+                  in the prototype risk score.
+                </small>
+              </div>
+            </div>
 
             <div className="analysis-actions">
               <button
                 className="analyse"
-                onClick={analyseRisk}
+                onClick={() => runRiskAnalysis()}
                 disabled={loading}
               >
                 <span>
                   {loading
-                    ? "ANALYSING CONDITIONS..."
+                    ? "PROCESSING RISK ENGINE"
                     : "RUN RISK ANALYSIS"}
                 </span>
 
-                <strong>→</strong>
+                <span>→</span>
               </button>
 
               <button
@@ -624,301 +717,319 @@ function App() {
                 onClick={simulateHeavyRain}
                 disabled={loading}
               >
-                <span>⚠</span>
                 SIMULATE HEAVY RAIN
               </button>
 
-              {simulationMode && (
+              {simulationActive && (
                 <button
                   className="reset-simulation"
                   onClick={resetSimulation}
                   disabled={loading}
                 >
-                  RESET SCENARIO
+                  RESET
                 </button>
               )}
             </div>
+
+            {simulationActive && (
+              <div className="simulation-banner">
+                <strong>
+                  SCENARIO SIMULATION ACTIVE
+                </strong>
+
+                <span>
+                  Heavy rainfall scenario applied through
+                  the Python risk engine.
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* ASSESSMENT */}
-          <div className="panel assessment-panel">
-            <div className="panel-heading">
-              <div>
-                <span>04</span>
-                <h2>AI Assessment</h2>
-              </div>
+          {/* ===================================================
+              ASSESSMENT
+          ==================================================== */}
 
-              <small>
-                {simulationMode ? "SIMULATION" : "MODEL OUTPUT"}
-              </small>
+          <div className="panel assessment-panel">
+            <div className="panel-header">
+              <div>
+                <span className="section-kicker">
+                  05 · AI ASSESSMENT
+                </span>
+
+                <h2>
+                  Explain the risk.
+                </h2>
+              </div>
             </div>
 
-            {!result ? (
+            {loading ? (
               <div className="waiting">
-                <div className="pulse">
-                  <div />
+                <div className="loader-ring" />
+
+                <strong>
+                  ANALYZING ENVIRONMENTAL SIGNALS
+                </strong>
+
+                <span>
+                  Sending data to Python risk engine...
+                </span>
+              </div>
+            ) : result.confidence === 0 ? (
+              <div className="waiting">
+                <div className="waiting-mark">
+                  —
                 </div>
 
-                <h3>Model ready</h3>
+                <strong>
+                  ANALYSIS REQUIRED
+                </strong>
 
-                <p>
-                  Environmental indicators are loaded for{" "}
-                  <strong>{location.name}</strong>. Run an analysis
-                  to generate the decision layer.
-                </p>
-
-                <div className="waiting-score">
-                  <span>PREVIEW SIGNAL</span>
-                  <strong>{livePreview.risk_score}/100</strong>
-                </div>
+                <span>
+                  Run the risk engine to generate an
+                  assessment.
+                </span>
               </div>
             ) : (
               <div className="assessment">
-                <div className="assessment-banner">
+                <div className="assessment-top">
                   <div>
-                    <span>
-                      {simulationMode
-                        ? "SCENARIO RESULT"
-                        : "MODEL ASSESSMENT"}
+                    <span className="assessment-label">
+                      RISK SCORE
                     </span>
 
-                    <strong>
-                      {location.name} · {location.state}
-                    </strong>
-                  </div>
-
-                  <div className={`alert-state ${result.risk_level.toLowerCase()}`}>
-                    {result.risk_level}
-                  </div>
-                </div>
-
-                <div className="score-row">
-                  <div>
-                    <span className="score-label">
-                      COMPOSITE RISK SCORE
-                    </span>
-
-                    <div className="score">
-                      {result.risk_score}
+                    <div
+                      className={`score ${riskClass}`}
+                    >
+                      {result.risk_score.toFixed(1)}
                       <small>/100</small>
                     </div>
                   </div>
 
-                  <div className={`risk-badge ${result.risk_level.toLowerCase()}`}>
-                    {result.risk_level}
+                  <div className="confidence">
+                    <span>CONFIDENCE</span>
+                    <strong>
+                      {result.confidence}%
+                    </strong>
                   </div>
                 </div>
 
-                <div className="confidence">
-                  <div>
-                    <span>MODEL CONFIDENCE</span>
-
-                    <strong>{result.confidence}%</strong>
-                  </div>
-
-                  <div className="confidence-bar">
-                    <div
-                      style={{
-                        width: `${result.confidence}%`,
-                      }}
-                    />
-                  </div>
+                <div
+                  className={`severity ${riskClass}`}
+                >
+                  <span>ASSESSMENT</span>
+                  <strong>
+                    {result.severity}
+                  </strong>
                 </div>
 
-                <div className="severity">
-                  <span>RECOMMENDED DECISION</span>
+                <div className="factor-heading">
+                  <span>
+                    CONTRIBUTING FACTORS
+                  </span>
 
-                  <strong>{result.severity}</strong>
-                </div>
-
-                <div className="factor-title">
-                  WHY IS THIS ZONE AT RISK?
+                  <small>
+                    Backend model output
+                  </small>
                 </div>
 
                 <div className="factors">
-                  {result.factors.map((factor, index) => (
-                    <div
-                      className="factor"
-                      key={`${factor.name}-${index}`}
-                    >
-                      <div className="factor-number">
-                        {String(index + 1).padStart(2, "0")}
-                      </div>
+                  {result.factors.map(
+                    (factor, index) => (
+                      <div
+                        className="factor"
+                        key={`${factor.name}-${index}`}
+                      >
+                        <div className="factor-main">
+                          <span className="factor-index">
+                            0{index + 1}
+                          </span>
 
-                      <div className="factor-main">
-                        <strong>{factor.name}</strong>
+                          <div>
+                            <strong>
+                              {factor.name}
+                            </strong>
 
-                        <span>
-                          {factor.value} · +{factor.contribution}
+                            <small>
+                              {factor.value}
+                            </small>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`impact ${factor.impact.toLowerCase()}`}
+                        >
+                          {factor.impact}
                         </span>
                       </div>
-
-                      <div
-                        className={`impact ${factor.impact.toLowerCase()}`}
-                      >
-                        {factor.impact}
-                      </div>
-                    </div>
-                  ))}
+                    ),
+                  )}
                 </div>
               </div>
             )}
           </div>
         </section>
 
-        {/* DECISION LAYER */}
+        {/* =====================================================
+            DECISION LAYER
+        ====================================================== */}
+
         <section className="decision-section">
-          <div className="decision-header">
+          <div className="section-heading">
             <div>
-              <span>05</span>
-              <h2>Decision Layer</h2>
+              <span className="section-kicker">
+                06 · DECISION LAYER
+              </span>
+
+              <h2>
+                Not another dashboard.
+              </h2>
             </div>
 
-            <small>
-              RISK → RESPONSE
-            </small>
+            <p>
+              Risk intelligence should lead to an action,
+              not just another number.
+            </p>
           </div>
 
           <div className="decision-grid">
             <div className="decision-card">
-              <span>01 · OBSERVE</span>
-              <strong>Monitor changing signals</strong>
+              <span className="decision-number">
+                01
+              </span>
+
+              <strong>OBSERVE</strong>
+
               <p>
-                Track rainfall, terrain slope, soil moisture and
-                vegetation conditions.
+                Monitor rainfall, terrain slope, soil
+                moisture and vegetation conditions.
               </p>
             </div>
 
             <div className="decision-card">
-              <span>02 · PRIORITIZE</span>
-              <strong>Rank high-risk zones</strong>
+              <span className="decision-number">
+                02
+              </span>
+
+              <strong>PRIORITIZE</strong>
+
               <p>
-                Use the composite risk score to identify areas
-                requiring closer attention.
+                Rank locations according to their current
+                modeled landslide risk.
               </p>
             </div>
 
             <div className="decision-card">
-              <span>03 · VERIFY</span>
-              <strong>Trigger field assessment</strong>
+              <span className="decision-number">
+                03
+              </span>
+
+              <strong>VERIFY</strong>
+
               <p>
-                High-risk outputs can guide field teams toward
-                locations requiring verification.
+                Direct field teams toward areas showing
+                stronger environmental warning signals.
               </p>
             </div>
 
-            <div className={`decision-card action-card ${activeResult.risk_level.toLowerCase()}`}>
-              <span>04 · ACT</span>
-              <strong>
-                {activeResult.risk_level === "CRITICAL"
-                  ? "Immediate assessment"
-                  : activeResult.risk_level === "HIGH"
-                    ? "Early warning recommended"
-                    : activeResult.risk_level === "MODERATE"
-                      ? "Enhanced monitoring"
-                      : "Routine monitoring"}
-              </strong>
-              <p>{activeResult.severity}</p>
+            <div className="decision-card">
+              <span className="decision-number">
+                04
+              </span>
+
+              <strong>ACT</strong>
+
+              <p>
+                Escalate monitoring or initiate early-warning
+                procedures when thresholds are exceeded.
+              </p>
             </div>
           </div>
         </section>
 
-        {/* EARLY WARNING */}
-        <section className="early-warning">
-          <div className="warning-icon">
-            {activeResult.risk_level === "CRITICAL" ? "!" : "↗"}
-          </div>
+        {/* =====================================================
+            EARLY WARNING
+        ====================================================== */}
 
-          <div>
-            <span>EARLY WARNING LAYER</span>
+        <section className="early-warning">
+          <div className="warning-content">
+            <span className="section-kicker">
+              EARLY WARNING PROTOCOL
+            </span>
 
             <h2>
-              From prediction to preparedness.
+              From signal
+              <br />
+              to response.
             </h2>
 
             <p>
-              The prototype demonstrates how multiple environmental
-              signals can be transformed into an explainable risk
-              assessment and prioritized response recommendation.
-              Future production integration can incorporate validated
-              satellite, GIS, meteorological and historical landslide
-              datasets.
+              When environmental conditions converge,
+              the system highlights the location for
+              enhanced monitoring and response.
             </p>
           </div>
 
           <div className="warning-status">
-            <span>CURRENT STATE</span>
-            <strong>{alertState}</strong>
+            <span className="warning-status-label">
+              CURRENT STATUS
+            </span>
+
+            <strong className={riskClass}>
+              {riskLevel}
+            </strong>
+
+            <span>
+              {result.severity}
+            </span>
           </div>
         </section>
 
-        {/* DATA DISCLAIMER */}
-        <section className="prototype-note">
-          <div className="prototype-note-mark">i</div>
+        {/* =====================================================
+            PROTOTYPE NOTICE
+        ====================================================== */}
 
+        <section className="prototype-note">
           <div>
-            <strong>PROTOTYPE DATA NOTICE</strong>
+            <span className="section-kicker">
+              PROTOTYPE DATA NOTICE
+            </span>
+
+            <strong>
+              Environmental values currently represent
+              demonstration inputs.
+            </strong>
 
             <p>
-              Current locations and environmental values are
-              demonstration inputs for the SIH prototype. They are not
-              presented as live government, satellite or weather
-              observations.
+              The production system can integrate satellite
+              imagery, GIS layers, meteorological feeds,
+              remote-sensing indicators and field observations
+              to generate operational risk intelligence.
             </p>
+          </div>
+
+          <div className="prototype-tag">
+            SIH26002
           </div>
         </section>
       </main>
 
+      {/* =====================================================
+          FOOTER
+      ====================================================== */}
+
       <footer>
-        <span>LANDSLIDE AI · SIH26002</span>
+        <div>
+          <strong>LANDSLIDE AI</strong>
+          <span>
+            NER RISK INTELLIGENCE CENTER
+          </span>
+        </div>
 
         <span>
-          AI · GIS · REMOTE SENSING · EARLY WARNING
+          AI-assisted landslide risk monitoring ·
+          SIH26002
         </span>
       </footer>
-    </div>
-  );
-}
-
-type ParameterProps = {
-  label: string;
-  value: string;
-  min: number;
-  max: number;
-  number: number;
-  onChange: (value: number) => void;
-};
-
-function Parameter({
-  label,
-  value,
-  min,
-  max,
-  number,
-  onChange,
-}: ParameterProps) {
-  return (
-    <div className="parameter">
-      <div className="parameter-top">
-        <span>{label}</span>
-
-        <strong>{value}</strong>
-      </div>
-
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={number}
-        onChange={(event) =>
-          onChange(Number(event.target.value))
-        }
-      />
-
-      <div className="range-labels">
-        <span>{min}</span>
-        <span>{max}</span>
-      </div>
     </div>
   );
 }
