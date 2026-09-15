@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import "./App.css";
 import RiskMap from "./components/RiskMap";
+
+type RiskLevel = "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
 
 type Factor = {
   name: string;
@@ -10,7 +12,7 @@ type Factor = {
 
 type RiskResult = {
   risk_score: number;
-  risk_level: "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
+  risk_level: RiskLevel;
   severity: string;
   confidence: number;
   factors: Factor[];
@@ -34,7 +36,6 @@ type Location = {
   vegetation: number;
   latitude: number;
   longitude: number;
-  population: string;
 };
 
 const API_URL =
@@ -52,7 +53,6 @@ const locations: Location[] = [
     vegetation: 32,
     latitude: 23.7271,
     longitude: 92.7176,
-    population: "293K",
   },
   {
     id: 2,
@@ -65,7 +65,6 @@ const locations: Location[] = [
     vegetation: 24,
     latitude: 27.3389,
     longitude: 88.6065,
-    population: "100K",
   },
   {
     id: 3,
@@ -78,7 +77,6 @@ const locations: Location[] = [
     vegetation: 27,
     latitude: 25.5788,
     longitude: 91.8933,
-    population: "354K",
   },
   {
     id: 4,
@@ -91,123 +89,107 @@ const locations: Location[] = [
     vegetation: 35,
     latitude: 27.0844,
     longitude: 93.6053,
-    population: "59K",
   },
 ];
 
-function getRiskClass(level: string) {
-  return level.toLowerCase();
-}
-
-function createLocalInitialResult(location: Location): RiskResult {
-  return {
-    risk_score: 0,
-    risk_level: "LOW",
-    severity: "Waiting for analysis",
-    confidence: 0,
-    factors: [],
-    inputs: {
-      rainfall: location.rainfall,
-      slope: location.slope,
-      elevation: location.elevation,
-      soil_moisture: location.moisture,
-      vegetation_loss: location.vegetation,
-    },
-  };
-}
+const emptyResult: RiskResult = {
+  risk_score: 0,
+  risk_level: "LOW",
+  severity: "Waiting for analysis",
+  confidence: 0,
+  factors: [],
+  inputs: {
+    rainfall: 0,
+    slope: 0,
+    elevation: 0,
+    soil_moisture: 0,
+    vegetation_loss: 0,
+  },
+};
 
 function App() {
-  const [selectedLocation, setSelectedLocation] = useState<Location>(
-    locations[0],
+  const [selectedLocation, setSelectedLocation] =
+    useState<Location>(locations[0]);
+
+  const [rainfall, setRainfall] = useState(
+    locations[0].rainfall,
   );
 
-  const [rainfall, setRainfall] = useState(locations[0].rainfall);
-  const [slope, setSlope] = useState(locations[0].slope);
-  const [elevation, setElevation] = useState(locations[0].elevation);
+  const [slope, setSlope] = useState(
+    locations[0].slope,
+  );
+
+  const [elevation, setElevation] = useState(
+    locations[0].elevation,
+  );
+
   const [soilMoisture, setSoilMoisture] = useState(
     locations[0].moisture,
   );
+
   const [vegetationLoss, setVegetationLoss] = useState(
     locations[0].vegetation,
   );
 
-  const [result, setResult] = useState<RiskResult>(
-    createLocalInitialResult(locations[0]),
-  );
+  const [result, setResult] =
+    useState<RiskResult>(emptyResult);
 
   const [loading, setLoading] = useState(false);
+
   const [error, setError] = useState("");
-  const [simulationActive, setSimulationActive] = useState(false);
 
-  const inputPayload = useMemo(
-    () => ({
-      rainfall,
-      slope,
-      elevation,
-      soil_moisture: soilMoisture,
-      vegetation_loss: vegetationLoss,
-    }),
-    [
-      rainfall,
-      slope,
-      elevation,
-      soilMoisture,
-      vegetationLoss,
-    ],
-  );
+  const [simulationActive, setSimulationActive] =
+    useState(false);
 
-  const runRiskAnalysis = async (
-    payload = inputPayload,
-    simulation = false,
-  ) => {
+  async function runRiskAnalysis(
+    rainfallValue = rainfall,
+    soilMoistureValue = soilMoisture,
+    isSimulation = false,
+  ) {
     setLoading(true);
     setError("");
 
     try {
-      const response = await fetch(`${API_URL}/api/risk`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        `${API_URL}/api/risk`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            rainfall: rainfallValue,
+            slope: slope,
+            elevation: elevation,
+            soil_moisture: soilMoistureValue,
+            vegetation_loss: vegetationLoss,
+          }),
         },
-        body: JSON.stringify(payload),
-      });
+      );
 
       if (!response.ok) {
-        let message = `Backend returned HTTP ${response.status}`;
-
-        try {
-          const errorData = await response.json();
-
-          if (errorData?.detail) {
-            message = Array.isArray(errorData.detail)
-              ? errorData.detail
-                  .map((item: any) => item.msg)
-                  .join(", ")
-              : String(errorData.detail);
-          }
-        } catch {
-          // Keep default error message.
-        }
-
-        throw new Error(message);
+        throw new Error(
+          `Risk engine returned ${response.status}`,
+        );
       }
 
-      const data: RiskResult = await response.json();
+      const data: RiskResult =
+        await response.json();
 
       setResult(data);
-      setSimulationActive(simulation);
+      setSimulationActive(isSimulation);
     } catch (err) {
-      console.error("Risk analysis failed:", err);
+      console.error(err);
 
       setError(
-        "Unable to reach the risk engine. Make sure the FastAPI backend is running on port 8000.",
+        "Could not connect to the Python risk engine. Make sure FastAPI is running on port 8000.",
       );
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const handleLocationChange = (location: Location) => {
+  function selectLocation(location: Location) {
     setSelectedLocation(location);
 
     setRainfall(location.rainfall);
@@ -216,59 +198,59 @@ function App() {
     setSoilMoisture(location.moisture);
     setVegetationLoss(location.vegetation);
 
+    setResult(emptyResult);
     setSimulationActive(false);
     setError("");
+  }
 
-    setResult(createLocalInitialResult(location));
-  };
-
-  const simulateHeavyRain = async () => {
-    const simulatedRainfall = Math.min(
-      500,
+  function simulateHeavyRain() {
+    const newRainfall = Math.min(
       rainfall + 65,
+      500,
     );
 
-    const simulatedMoisture = Math.min(
-      100,
+    const newMoisture = Math.min(
       soilMoisture + 13,
+      100,
     );
 
-    const payload = {
-      rainfall: simulatedRainfall,
-      slope,
-      elevation,
-      soil_moisture: simulatedMoisture,
-      vegetation_loss: vegetationLoss,
-    };
+    setRainfall(newRainfall);
+    setSoilMoisture(newMoisture);
 
-    await runRiskAnalysis(payload, true);
-  };
+    runRiskAnalysis(
+      newRainfall,
+      newMoisture,
+      true,
+    );
+  }
 
-  const resetSimulation = () => {
+  function resetSimulation() {
     setRainfall(selectedLocation.rainfall);
     setSlope(selectedLocation.slope);
     setElevation(selectedLocation.elevation);
     setSoilMoisture(selectedLocation.moisture);
-    setVegetationLoss(selectedLocation.vegetation);
+    setVegetationLoss(
+      selectedLocation.vegetation,
+    );
 
+    setResult(emptyResult);
     setSimulationActive(false);
     setError("");
+  }
 
-    setResult(createLocalInitialResult(selectedLocation));
-  };
-
-  const riskLevel = result.risk_level || "LOW";
-  const riskClass = getRiskClass(riskLevel);
+  const riskClass =
+    result.risk_level.toLowerCase();
 
   return (
     <div className="app">
-      {/* =====================================================
-          HEADER
-      ====================================================== */}
+
+      {/* HEADER */}
 
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">L</div>
+          <div className="brand-mark">
+            L
+          </div>
 
           <div>
             <div className="brand-name">
@@ -287,13 +269,13 @@ function App() {
         </div>
       </header>
 
-      {/* =====================================================
-          HERO
-      ====================================================== */}
-
       <main>
+
+        {/* HERO */}
+
         <section className="hero">
           <div className="hero-copy">
+
             <div className="eyebrow">
               SIH26002 · NORTH EASTERN REGION
             </div>
@@ -305,15 +287,18 @@ function App() {
             </h1>
 
             <p>
-              AI-assisted landslide risk intelligence combining
-              environmental signals, terrain conditions and
-              explainable risk assessment.
+              AI-assisted landslide risk intelligence
+              combining environmental signals, terrain
+              conditions and explainable risk assessment.
             </p>
 
             <div className="hero-actions">
+
               <button
                 className="primary-button"
-                onClick={() => runRiskAnalysis()}
+                onClick={() =>
+                  runRiskAnalysis()
+                }
                 disabled={loading}
               >
                 {loading
@@ -323,13 +308,21 @@ function App() {
 
               <div className="hero-location">
                 <span>MONITORING</span>
-                <strong>{selectedLocation.name}</strong>
-                <small>{selectedLocation.state}</small>
+
+                <strong>
+                  {selectedLocation.name}
+                </strong>
+
+                <small>
+                  {selectedLocation.state}
+                </small>
               </div>
+
             </div>
           </div>
 
           <div className="hero-risk">
+
             <div className="hero-risk-label">
               CURRENT MODEL RISK
             </div>
@@ -343,7 +336,7 @@ function App() {
             <div
               className={`hero-risk-level ${riskClass}`}
             >
-              {riskLevel}
+              {result.risk_level}
             </div>
 
             <div className="hero-risk-caption">
@@ -351,34 +344,38 @@ function App() {
                 ? "Processing environmental signals"
                 : result.severity}
             </div>
+
           </div>
         </section>
 
-        {/* =====================================================
-            ERROR
-        ====================================================== */}
+        {/* ERROR */}
 
         {error && (
           <div className="error-banner">
             <div>
-              <strong>RISK ENGINE CONNECTION ERROR</strong>
+              <strong>
+                RISK ENGINE CONNECTION ERROR
+              </strong>
+
               <span>{error}</span>
             </div>
 
             <button
-              onClick={() => runRiskAnalysis()}
+              onClick={() =>
+                runRiskAnalysis()
+              }
             >
               RETRY
             </button>
           </div>
         )}
 
-        {/* =====================================================
-            REGIONAL OVERVIEW
-        ====================================================== */}
+        {/* OVERVIEW */}
 
         <section className="overview-section">
+
           <div className="section-heading">
+
             <div>
               <span className="section-kicker">
                 01 · REGIONAL INTELLIGENCE
@@ -390,30 +387,44 @@ function App() {
             </div>
 
             <p>
-              Environmental indicators are converted into
-              interpretable risk intelligence for rapid
-              decision-making.
+              Environmental indicators are converted
+              into interpretable risk intelligence for
+              rapid decision-making.
             </p>
+
           </div>
 
           <div className="overview-grid">
+
             <div className="overview-card">
               <span>MONITORING ZONES</span>
-              <strong>{locations.length}</strong>
-              <small>Priority locations</small>
+              <strong>
+                {locations.length}
+              </strong>
+              <small>
+                Priority locations
+              </small>
             </div>
 
             <div className="overview-card">
               <span>ACTIVE LOCATION</span>
-              <strong>{selectedLocation.name}</strong>
-              <small>{selectedLocation.state}</small>
+
+              <strong>
+                {selectedLocation.name}
+              </strong>
+
+              <small>
+                {selectedLocation.state}
+              </small>
             </div>
 
             <div className="overview-card">
               <span>RISK STATUS</span>
+
               <strong className={riskClass}>
-                {riskLevel}
+                {result.risk_level}
               </strong>
+
               <small>
                 Score {result.risk_score.toFixed(1)} / 100
               </small>
@@ -421,24 +432,27 @@ function App() {
 
             <div className="overview-card">
               <span>MODEL CONFIDENCE</span>
+
               <strong>
-                {result.confidence
+                {result.confidence > 0
                   ? `${result.confidence}%`
                   : "—"}
               </strong>
+
               <small>
                 Prototype engine output
               </small>
             </div>
+
           </div>
         </section>
 
-        {/* =====================================================
-            MONITORING ZONES
-        ====================================================== */}
+        {/* LOCATIONS */}
 
         <section className="location-section">
+
           <div className="section-heading">
+
             <div>
               <span className="section-kicker">
                 02 · MONITORING ZONES
@@ -453,47 +467,63 @@ function App() {
               Select a monitored location to load its
               environmental conditions.
             </p>
+
           </div>
 
           <div className="location-grid">
+
             {locations.map((location) => (
+
               <button
                 key={location.id}
                 className={`location-card ${
-                  selectedLocation.id === location.id
+                  selectedLocation.id ===
+                  location.id
                     ? "selected"
                     : ""
                 }`}
                 onClick={() =>
-                  handleLocationChange(location)
+                  selectLocation(location)
                 }
               >
+
                 <div className="location-number">
                   0{location.id}
                 </div>
 
                 <div className="location-info">
-                  <strong>{location.name}</strong>
-                  <span>{location.state}</span>
+                  <strong>
+                    {location.name}
+                  </strong>
+
+                  <span>
+                    {location.state}
+                  </span>
                 </div>
 
                 <div className="location-meta">
                   <span>
                     {location.rainfall} mm
                   </span>
-                  <small>rainfall</small>
+
+                  <small>
+                    rainfall
+                  </small>
                 </div>
+
               </button>
+
             ))}
+
           </div>
         </section>
 
-        {/* =====================================================
-            MAP
-        ====================================================== */}
+        {/* MAP */}
 
         <section className="map-section">
+
           <div className="section-heading">
+
             <div>
               <span className="section-kicker">
                 03 · GEOSPATIAL INTELLIGENCE
@@ -505,26 +535,30 @@ function App() {
             </div>
 
             <p>
-              Spatial monitoring layer for high-risk terrain.
+              Spatial monitoring layer for high-risk
+              terrain.
             </p>
+
           </div>
 
           <div className="risk-map">
             <RiskMap
               location={selectedLocation.name}
               riskScore={result.risk_score}
-              riskLevel={riskLevel}
+              riskLevel={result.risk_level}
             />
           </div>
+
         </section>
 
-        {/* =====================================================
-            ENVIRONMENTAL SIGNALS
-        ====================================================== */}
+        {/* ENVIRONMENTAL SIGNALS */}
 
         <section className="dashboard">
+
           <div className="panel">
+
             <div className="panel-header">
+
               <div>
                 <span className="section-kicker">
                   04 · ENVIRONMENTAL SIGNALS
@@ -538,11 +572,14 @@ function App() {
               <span className="panel-status">
                 INPUT STREAM
               </span>
+
             </div>
 
             <div className="signal-summary">
+
               <div>
                 <span>LOCATION</span>
+
                 <strong>
                   {selectedLocation.name}
                 </strong>
@@ -550,22 +587,33 @@ function App() {
 
               <div>
                 <span>LAT / LONG</span>
+
                 <strong>
-                  {selectedLocation.latitude.toFixed(3)}° /
-                  {selectedLocation.longitude.toFixed(3)}°
+                  {selectedLocation.latitude.toFixed(3)}
+                  {" / "}
+                  {selectedLocation.longitude.toFixed(3)}
                 </strong>
               </div>
 
               <div>
                 <span>ELEVATION</span>
-                <strong>{elevation} m</strong>
+
+                <strong>
+                  {elevation} m
+                </strong>
               </div>
+
             </div>
 
             <div className="parameters">
+
+              {/* RAINFALL */}
+
               <div className="parameter">
+
                 <div className="parameter-header">
                   <label>Rainfall</label>
+
                   <strong>
                     {rainfall} mm/day
                   </strong>
@@ -587,12 +635,21 @@ function App() {
                   <span>0</span>
                   <span>500 mm</span>
                 </div>
+
               </div>
 
+              {/* SLOPE */}
+
               <div className="parameter">
+
                 <div className="parameter-header">
-                  <label>Terrain slope</label>
-                  <strong>{slope}°</strong>
+                  <label>
+                    Terrain slope
+                  </label>
+
+                  <strong>
+                    {slope}°
+                  </strong>
                 </div>
 
                 <input
@@ -611,11 +668,18 @@ function App() {
                   <span>0°</span>
                   <span>90°</span>
                 </div>
+
               </div>
 
+              {/* SOIL MOISTURE */}
+
               <div className="parameter">
+
                 <div className="parameter-header">
-                  <label>Soil moisture</label>
+                  <label>
+                    Soil moisture
+                  </label>
+
                   <strong>
                     {soilMoisture}%
                   </strong>
@@ -637,11 +701,18 @@ function App() {
                   <span>Dry</span>
                   <span>Saturated</span>
                 </div>
+
               </div>
 
+              {/* VEGETATION */}
+
               <div className="parameter">
+
                 <div className="parameter-header">
-                  <label>Vegetation loss</label>
+                  <label>
+                    Vegetation loss
+                  </label>
+
                   <strong>
                     {vegetationLoss}%
                   </strong>
@@ -663,11 +734,18 @@ function App() {
                   <span>0%</span>
                   <span>100%</span>
                 </div>
+
               </div>
 
+              {/* ELEVATION */}
+
               <div className="parameter">
+
                 <div className="parameter-header">
-                  <label>Elevation</label>
+                  <label>
+                    Elevation
+                  </label>
+
                   <strong>
                     {elevation} m
                   </strong>
@@ -694,13 +772,20 @@ function App() {
                   Terrain context — not directly weighted
                   in the prototype risk score.
                 </small>
+
               </div>
+
             </div>
 
+            {/* ACTIONS */}
+
             <div className="analysis-actions">
+
               <button
                 className="analyse"
-                onClick={() => runRiskAnalysis()}
+                onClick={() =>
+                  runRiskAnalysis()
+                }
                 disabled={loading}
               >
                 <span>
@@ -729,28 +814,32 @@ function App() {
                   RESET
                 </button>
               )}
+
             </div>
 
             {simulationActive && (
               <div className="simulation-banner">
+
                 <strong>
                   SCENARIO SIMULATION ACTIVE
                 </strong>
 
                 <span>
-                  Heavy rainfall scenario applied through
-                  the Python risk engine.
+                  Heavy rainfall scenario is being
+                  evaluated through the Python risk engine.
                 </span>
+
               </div>
             )}
+
           </div>
 
-          {/* ===================================================
-              ASSESSMENT
-          ==================================================== */}
+          {/* ASSESSMENT */}
 
           <div className="panel assessment-panel">
+
             <div className="panel-header">
+
               <div>
                 <span className="section-kicker">
                   05 · AI ASSESSMENT
@@ -760,10 +849,13 @@ function App() {
                   Explain the risk.
                 </h2>
               </div>
+
             </div>
 
             {loading ? (
+
               <div className="waiting">
+
                 <div className="loader-ring" />
 
                 <strong>
@@ -773,9 +865,13 @@ function App() {
                 <span>
                   Sending data to Python risk engine...
                 </span>
+
               </div>
+
             ) : result.confidence === 0 ? (
+
               <div className="waiting">
+
                 <div className="waiting-mark">
                   —
                 </div>
@@ -788,11 +884,17 @@ function App() {
                   Run the risk engine to generate an
                   assessment.
                 </span>
+
               </div>
+
             ) : (
+
               <div className="assessment">
+
                 <div className="assessment-top">
+
                   <div>
+
                     <span className="assessment-label">
                       RISK SCORE
                     </span>
@@ -801,50 +903,75 @@ function App() {
                       className={`score ${riskClass}`}
                     >
                       {result.risk_score.toFixed(1)}
-                      <small>/100</small>
+
+                      <small>
+                        /100
+                      </small>
                     </div>
+
                   </div>
 
                   <div className="confidence">
-                    <span>CONFIDENCE</span>
+
+                    <span>
+                      CONFIDENCE
+                    </span>
+
                     <strong>
                       {result.confidence}%
                     </strong>
+
                   </div>
+
                 </div>
 
                 <div
                   className={`severity ${riskClass}`}
                 >
-                  <span>ASSESSMENT</span>
+
+                  <span>
+                    ASSESSMENT
+                  </span>
+
                   <strong>
                     {result.severity}
                   </strong>
+
                 </div>
 
                 <div className="factor-heading">
+
                   <span>
                     CONTRIBUTING FACTORS
                   </span>
 
                   <small>
-                    Backend model output
+                    Python risk engine output
                   </small>
+
                 </div>
 
                 <div className="factors">
+
                   {result.factors.map(
                     (factor, index) => (
+
                       <div
                         className="factor"
                         key={`${factor.name}-${index}`}
                       >
+
                         <div className="factor-main">
+
                           <span className="factor-index">
-                            0{index + 1}
+                            {String(index + 1).padStart(
+                              2,
+                              "0",
+                            )}
                           </span>
 
                           <div>
+
                             <strong>
                               {factor.name}
                             </strong>
@@ -852,7 +979,9 @@ function App() {
                             <small>
                               {factor.value}
                             </small>
+
                           </div>
+
                         </div>
 
                         <span
@@ -860,21 +989,28 @@ function App() {
                         >
                           {factor.impact}
                         </span>
+
                       </div>
+
                     ),
                   )}
+
                 </div>
+
               </div>
+
             )}
+
           </div>
+
         </section>
 
-        {/* =====================================================
-            DECISION LAYER
-        ====================================================== */}
+        {/* DECISION LAYER */}
 
         <section className="decision-section">
+
           <div className="section-heading">
+
             <div>
               <span className="section-kicker">
                 06 · DECISION LAYER
@@ -889,9 +1025,11 @@ function App() {
               Risk intelligence should lead to an action,
               not just another number.
             </p>
+
           </div>
 
           <div className="decision-grid">
+
             <div className="decision-card">
               <span className="decision-number">
                 01
@@ -943,15 +1081,16 @@ function App() {
                 procedures when thresholds are exceeded.
               </p>
             </div>
+
           </div>
         </section>
 
-        {/* =====================================================
-            EARLY WARNING
-        ====================================================== */}
+        {/* EARLY WARNING */}
 
         <section className="early-warning">
+
           <div className="warning-content">
+
             <span className="section-kicker">
               EARLY WARNING PROTOCOL
             </span>
@@ -967,29 +1106,33 @@ function App() {
               the system highlights the location for
               enhanced monitoring and response.
             </p>
+
           </div>
 
           <div className="warning-status">
+
             <span className="warning-status-label">
               CURRENT STATUS
             </span>
 
             <strong className={riskClass}>
-              {riskLevel}
+              {result.risk_level}
             </strong>
 
             <span>
               {result.severity}
             </span>
+
           </div>
+
         </section>
 
-        {/* =====================================================
-            PROTOTYPE NOTICE
-        ====================================================== */}
+        {/* PROTOTYPE NOTICE */}
 
         <section className="prototype-note">
+
           <div>
+
             <span className="section-kicker">
               PROTOTYPE DATA NOTICE
             </span>
@@ -1005,31 +1148,37 @@ function App() {
               remote-sensing indicators and field observations
               to generate operational risk intelligence.
             </p>
+
           </div>
 
           <div className="prototype-tag">
             SIH26002
           </div>
+
         </section>
+
       </main>
 
-      {/* =====================================================
-          FOOTER
-      ====================================================== */}
+      {/* FOOTER */}
 
       <footer>
+
         <div>
-          <strong>LANDSLIDE AI</strong>
+          <strong>
+            LANDSLIDE AI
+          </strong>
+
           <span>
             NER RISK INTELLIGENCE CENTER
           </span>
         </div>
 
         <span>
-          AI-assisted landslide risk monitoring ·
-          SIH26002
+          AI-assisted landslide risk monitoring · SIH26002
         </span>
+
       </footer>
+
     </div>
   );
 }
