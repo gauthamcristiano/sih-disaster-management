@@ -6,9 +6,9 @@ from risk_engine import calculate_risk
 
 
 app = FastAPI(
-    title="Landslide AI Risk Intelligence",
-    description="AI-assisted landslide risk monitoring system for the North Eastern Region.",
-    version="1.0.0"
+    title="Landslide AI — NER Risk Intelligence",
+    description="Explainable landslide risk monitoring API for the North Eastern Region.",
+    version="2.0.0",
 )
 
 
@@ -22,19 +22,20 @@ app.add_middleware(
 
 
 class RiskRequest(BaseModel):
-    rainfall: float = Field(ge=0, le=500)
-    slope: float = Field(ge=0, le=90)
-    elevation: float = Field(ge=0, le=5000)
-    soil_moisture: float = Field(ge=0, le=100)
-    vegetation_loss: float = Field(ge=0, le=100)
+    rainfall: float = Field(..., ge=0, le=500)
+    slope: float = Field(..., ge=0, le=90)
+    elevation: float = Field(..., ge=0, le=5000)
+    soil_moisture: float = Field(..., ge=0, le=100)
+    vegetation_loss: float = Field(..., ge=0, le=100)
 
 
 @app.get("/")
 def root():
     return {
-        "system": "Landslide AI Risk Intelligence",
+        "system": "Landslide AI",
         "status": "online",
-        "version": "1.0.0"
+        "version": "2.0.0",
+        "region": "North Eastern Region",
     }
 
 
@@ -42,19 +43,17 @@ def root():
 def health():
     return {
         "status": "healthy",
-        "risk_engine": "online"
+        "risk_engine": "online",
+        "mode": "prototype",
     }
 
 
 @app.post("/api/risk")
 def predict_risk(request: RiskRequest):
-
-    result = calculate_risk(
+    return calculate_risk(
         rainfall=request.rainfall,
         slope=request.slope,
         elevation=request.elevation,
         soil_moisture=request.soil_moisture,
         vegetation_loss=request.vegetation_loss,
     )
-
-    return result
