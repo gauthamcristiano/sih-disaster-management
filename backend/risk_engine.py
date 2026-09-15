@@ -1,25 +1,14 @@
-from typing import Dict, Any
+from typing import Any
 
 
-def clamp(
-    value: float,
-    minimum: float = 0.0,
-    maximum: float = 1.0
-) -> float:
+def clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
     return max(minimum, min(maximum, value))
 
 
-def normalize(
-    value: float,
-    minimum: float,
-    maximum: float
-) -> float:
+def normalize(value: float, minimum: float, maximum: float) -> float:
     if maximum <= minimum:
         return 0.0
-
-    return clamp(
-        (value - minimum) / (maximum - minimum)
-    )
+    return clamp((value - minimum) / (maximum - minimum))
 
 
 def calculate_risk(
@@ -28,197 +17,170 @@ def calculate_risk(
     elevation: float,
     soil_moisture: float,
     vegetation_loss: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
 
-    # ---------------------------------------------------------
-    # NORMALIZED ENVIRONMENTAL SIGNALS
-    # ---------------------------------------------------------
+    # Core hazard signals.
+    rainfall_score = normalize(rainfall, 0, 300)
+    slope_score = normalize(slope, 0, 45)
+    moisture_score = normalize(soil_moisture, 0, 100)
+    vegetation_score = normalize(vegetation_loss, 0, 100)
 
-    rainfall_score = normalize(
-        rainfall,
-        0,
-        300
-    )
+    # Elevation is terrain context, not a direct hazard multiplier.
+    elevation_context = normalize(elevation, 0, 2500)
 
-    slope_score = normalize(
-        slope,
-        0,
-        45
-    )
+    weights = {
+        "rainfall": 0.30,
+        "slope": 0.30,
+        "soil_moisture": 0.25,
+        "vegetation_loss": 0.15,
+    }
 
-    moisture_score = normalize(
-        soil_moisture,
-        0,
-        100
-    )
+    contributions = {
+        "rainfall": rainfall_score * weights["rainfall"],
+        "slope": slope_score * weights["slope"],
+        "soil_moisture": moisture_score * weights["soil_moisture"],
+        "vegetation_loss": vegetation_score * weights["vegetation_loss"],
+    }
 
-    vegetation_score = normalize(
-        vegetation_loss,
-        0,
-        100
-    )
+    risk_score = round(sum(contributions.values()) * 100, 1)
 
-    # Elevation is retained as terrain context.
-    # It is NOT directly treated as a risk multiplier.
-    elevation_score = normalize(
-        elevation,
-        0,
-        2500
-    )
-
-    # ---------------------------------------------------------
-    # RISK SCORE
-    # ---------------------------------------------------------
-    #
-    # Current prototype weighting:
-    #
-    # Rainfall       30%
-    # Slope          30%
-    # Soil moisture 25%
-    # Vegetation    15%
-    #
-    # Elevation is contextual rather than directly weighted.
-    # ---------------------------------------------------------
-
-    weighted_score = (
-        rainfall_score * 0.30
-        + slope_score * 0.30
-        + moisture_score * 0.25
-        + vegetation_score * 0.15
-    )
-
-    risk_score = round(
-        weighted_score * 100,
-        1
-    )
-
-    # ---------------------------------------------------------
-    # RISK CLASSIFICATION
-    # ---------------------------------------------------------
-
-    if risk_score < 25:
-        risk_level = "LOW"
-        severity = "Normal monitoring"
-
-    elif risk_score < 50:
-        risk_level = "MODERATE"
-        severity = "Enhanced monitoring recommended"
-
-    elif risk_score < 75:
-        risk_level = "HIGH"
-        severity = "Early warning recommended"
-
-    else:
+    if risk_score >= 75:
         risk_level = "CRITICAL"
         severity = "Immediate assessment recommended"
-
-    # ---------------------------------------------------------
-    # CONTRIBUTING FACTORS
-    # ---------------------------------------------------------
+        action = "Initiate field verification and prepare early-warning communication."
+    elif risk_score >= 50:
+        risk_level = "HIGH"
+        severity = "Early warning recommended"
+        action = "Increase monitoring and prioritize field verification."
+    elif risk_score >= 25:
+        risk_level = "MODERATE"
+        severity = "Enhanced monitoring recommended"
+        action = "Continue enhanced monitoring and watch environmental changes."
+    else:
+        risk_level = "LOW"
+        severity = "Normal monitoring"
+        action = "Maintain routine monitoring."
 
     factors = []
 
     if rainfall_score >= 0.70:
-
         factors.append({
             "name": "Heavy rainfall",
             "impact": "HIGH",
-            "value": f"{rainfall:.0f} mm/day"
+            "value": f"{rainfall:.0f} mm/day",
+            "contribution": round(contributions["rainfall"] * 100, 1),
         })
-
     elif rainfall_score >= 0.45:
-
         factors.append({
             "name": "Elevated rainfall",
             "impact": "MEDIUM",
-            "value": f"{rainfall:.0f} mm/day"
+            "value": f"{rainfall:.0f} mm/day",
+            "contribution": round(contributions["rainfall"] * 100, 1),
         })
 
     if slope_score >= 0.70:
-
         factors.append({
             "name": "Steep terrain",
             "impact": "HIGH",
-            "value": f"{slope:.1f}°"
+            "value": f"{slope:.1f}°",
+            "contribution": round(contributions["slope"] * 100, 1),
         })
-
     elif slope_score >= 0.45:
-
         factors.append({
             "name": "Moderate terrain slope",
             "impact": "MEDIUM",
-            "value": f"{slope:.1f}°"
+            "value": f"{slope:.1f}°",
+            "contribution": round(contributions["slope"] * 100, 1),
         })
 
     if moisture_score >= 0.70:
-
         factors.append({
             "name": "High soil moisture",
             "impact": "HIGH",
-            "value": f"{soil_moisture:.0f}%"
+            "value": f"{soil_moisture:.0f}%",
+            "contribution": round(contributions["soil_moisture"] * 100, 1),
         })
-
     elif moisture_score >= 0.45:
-
         factors.append({
             "name": "Elevated soil moisture",
             "impact": "MEDIUM",
-            "value": f"{soil_moisture:.0f}%"
+            "value": f"{soil_moisture:.0f}%",
+            "contribution": round(contributions["soil_moisture"] * 100, 1),
         })
 
     if vegetation_score >= 0.60:
-
         factors.append({
             "name": "Vegetation loss",
             "impact": "HIGH",
-            "value": f"{vegetation_loss:.0f}%"
+            "value": f"{vegetation_loss:.0f}%",
+            "contribution": round(contributions["vegetation_loss"] * 100, 1),
+        })
+    elif vegetation_score >= 0.35:
+        factors.append({
+            "name": "Vegetation disturbance",
+            "impact": "MEDIUM",
+            "value": f"{vegetation_loss:.0f}%",
+            "contribution": round(contributions["vegetation_loss"] * 100, 1),
         })
 
-    # Elevation is reported as context rather than a direct
-    # contributor to the risk score.
-
-    if elevation_score >= 0.70:
-
+    if elevation_context >= 0.70:
         factors.append({
             "name": "High-elevation terrain",
-            "impact": "MEDIUM",
-            "value": f"{elevation:.0f} m"
+            "impact": "CONTEXT",
+            "value": f"{elevation:.0f} m",
+            "contribution": 0.0,
         })
 
-    if not factors:
+    factors.sort(
+        key=lambda factor: factor["contribution"],
+        reverse=True
+    )
 
+    if not factors:
         factors.append({
             "name": "No dominant indicator",
             "impact": "LOW",
-            "value": "Stable"
+            "value": "Stable",
+            "contribution": 0.0,
         })
 
-    # ---------------------------------------------------------
-    # PROTOTYPE CONFIDENCE
-    # ---------------------------------------------------------
-
-    confidence = round(
-        72 + min(16, len(factors) * 4),
-        1
+    # Prototype confidence based on signal agreement.
+    active_signals = sum(
+        score >= 0.45
+        for score in (
+            rainfall_score,
+            slope_score,
+            moisture_score,
+            vegetation_score,
+        )
     )
 
-    # ---------------------------------------------------------
-    # RESPONSE
-    # ---------------------------------------------------------
+    confidence = round(70 + active_signals * 6, 1)
+    confidence = min(confidence, 94.0)
 
     return {
         "risk_score": risk_score,
         "risk_level": risk_level,
         "severity": severity,
+        "recommended_action": action,
         "confidence": confidence,
-
         "factors": factors,
-
+        "contributions": {
+            "rainfall": round(contributions["rainfall"] * 100, 1),
+            "slope": round(contributions["slope"] * 100, 1),
+            "soil_moisture": round(contributions["soil_moisture"] * 100, 1),
+            "vegetation_loss": round(contributions["vegetation_loss"] * 100, 1),
+        },
         "inputs": {
             "rainfall": rainfall,
             "slope": slope,
             "elevation": elevation,
             "soil_moisture": soil_moisture,
             "vegetation_loss": vegetation_loss,
-        }
+        },
+        "system": {
+            "engine": "Explainable Landslide Risk Engine",
+            "mode": "prototype",
+            "model_type": "weighted multi-factor risk scoring",
+        },
     }
