@@ -14,6 +14,7 @@ import {
   Waves,
   Wind,
 } from "lucide-react";
+import RiskMap from "./RiskMap";
 import "./App.css";
 
 type RiskLevel = "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
@@ -51,6 +52,14 @@ type Location = {
   population: string;
   lat: number;
   lon: number;
+};
+
+type Inputs = {
+  rainfall: number;
+  slope: number;
+  elevation: number;
+  soilMoisture: number;
+  vegetationLoss: number;
 };
 
 const API_URL =
@@ -122,12 +131,167 @@ const emptyResult: RiskResult = {
   },
 };
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalize(value: number, min: number, max: number) {
+  if (max <= min) return 0;
+  return clamp((value - min) / (max - min), 0, 1);
+}
+
+function calculateLocalRisk(inputs: Inputs): RiskResult {
+  const rainfallScore = normalize(inputs.rainfall, 0, 300);
+  const slopeScore = normalize(inputs.slope, 0, 45);
+  const moistureScore = normalize(inputs.soilMoisture, 0, 100);
+  const vegetationScore = normalize(inputs.vegetationLoss, 0, 100);
+
+  const contributions = {
+    rainfall: rainfallScore * 30,
+    slope: slopeScore * 30,
+    soil_moisture: moistureScore * 25,
+    vegetation_loss: vegetationScore * 15,
+  };
+
+  const riskScore = Number(
+    (
+      contributions.rainfall +
+      contributions.slope +
+      contributions.soil_moisture +
+      contributions.vegetation_loss
+    ).toFixed(1),
+  );
+
+  let riskLevel: RiskLevel = "LOW";
+  let severity = "Normal monitoring";
+  let action = "Maintain routine monitoring.";
+
+  if (riskScore >= 75) {
+    riskLevel = "CRITICAL";
+    severity = "Immediate assessment recommended";
+    action =
+      "Initiate field verification and prepare early-warning communication.";
+  } else if (riskScore >= 50) {
+    riskLevel = "HIGH";
+    severity = "Early warning recommended";
+    action =
+      "Increase monitoring and prioritize field verification.";
+  } else if (riskScore >= 25) {
+    riskLevel = "MODERATE";
+    severity = "Enhanced monitoring recommended";
+    action =
+      "Continue enhanced monitoring and watch environmental changes.";
+  }
+
+  const factors: Factor[] = [];
+
+  if (rainfallScore >= 0.7) {
+    factors.push({
+      name: "Heavy rainfall",
+      impact: "HIGH",
+      value: `${Math.round(inputs.rainfall)} mm/day`,
+      contribution: Number(contributions.rainfall.toFixed(1)),
+    });
+  } else if (rainfallScore >= 0.45) {
+    factors.push({
+      name: "Elevated rainfall",
+      impact: "MEDIUM",
+      value: `${Math.round(inputs.rainfall)} mm/day`,
+      contribution: Number(contributions.rainfall.toFixed(1)),
+    });
+  }
+
+  if (slopeScore >= 0.7) {
+    factors.push({
+      name: "Steep terrain",
+      impact: "HIGH",
+      value: `${inputs.slope.toFixed(1)}°`,
+      contribution: Number(contributions.slope.toFixed(1)),
+    });
+  } else if (slopeScore >= 0.45) {
+    factors.push({
+      name: "Moderate terrain slope",
+      impact: "MEDIUM",
+      value: `${inputs.slope.toFixed(1)}°`,
+      contribution: Number(contributions.slope.toFixed(1)),
+    });
+  }
+
+  if (moistureScore >= 0.7) {
+    factors.push({
+      name: "High soil moisture",
+      impact: "HIGH",
+      value: `${Math.round(inputs.soilMoisture)}%`,
+      contribution: Number(contributions.soil_moisture.toFixed(1)),
+    });
+  } else if (moistureScore >= 0.45) {
+    factors.push({
+      name: "Elevated soil moisture",
+      impact: "MEDIUM",
+      value: `${Math.round(inputs.soilMoisture)}%`,
+      contribution: Number(contributions.soil_moisture.toFixed(1)),
+    });
+  }
+
+  if (vegetationScore >= 0.6) {
+    factors.push({
+      name: "Vegetation loss",
+      impact: "HIGH",
+      value: `${Math.round(inputs.vegetationLoss)}%`,
+      contribution: Number(contributions.vegetation_loss.toFixed(1)),
+    });
+  } else if (vegetationScore >= 0.35) {
+    factors.push({
+      name: "Vegetation disturbance",
+      impact: "MEDIUM",
+      value: `${Math.round(inputs.vegetationLoss)}%`,
+      contribution: Number(contributions.vegetation_loss.toFixed(1)),
+    });
+  }
+
+  factors.sort((a, b) => b.contribution - a.contribution);
+
+  if (factors.length === 0) {
+    factors.push({
+      name: "No dominant indicator",
+      impact: "LOW",
+      value: "Stable",
+      contribution: 0,
+    });
+  }
+
+  const activeSignals = [
+    rainfallScore,
+    slopeScore,
+    moistureScore,
+    vegetationScore,
+  ].filter((score) => score >= 0.45).length;
+
+  const confidence = Math.min(94, 70 + activeSignals * 6);
+
+  return {
+    risk_score: riskScore,
+    risk_level: riskLevel,
+    severity,
+    recommended_action: action,
+    confidence,
+    factors,
+    contributions: {
+      rainfall: Number(contributions.rainfall.toFixed(1)),
+      slope: Number(contributions.slope.toFixed(1)),
+      soil_moisture: Number(contributions.soil_moisture.toFixed(1)),
+      vegetation_loss: Number(contributions.vegetation_loss.toFixed(1)),
+    },
+  };
+}
+
 function riskClass(level: RiskLevel) {
   return level.toLowerCase();
 }
 
 function App() {
   const [selectedLocation, setSelectedLocation] = useState(locations[0]);
+
   const [rainfall, setRainfall] = useState(locations[0].rainfall);
   const [slope, setSlope] = useState(locations[0].slope);
   const [elevation, setElevation] = useState(locations[0].elevation);
@@ -141,6 +305,24 @@ function App() {
   const [result, setResult] = useState<RiskResult>(emptyResult);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
+  const [engineMode, setEngineMode] = useState<"API" | "LOCAL">("LOCAL");
+
+  const inputs = useMemo<Inputs>(
+    () => ({
+      rainfall,
+      slope,
+      elevation,
+      soilMoisture,
+      vegetationLoss,
+    }),
+    [
+      rainfall,
+      slope,
+      elevation,
+      soilMoisture,
+      vegetationLoss,
+    ],
+  );
 
   const currentSignals = useMemo(
     () => [
@@ -183,7 +365,9 @@ function App() {
     setApiError("");
   }
 
-  async function analyseRisk() {
+  async function analyseRisk(customInputs?: Inputs) {
+    const analysisInputs = customInputs || inputs;
+
     setLoading(true);
     setApiError("");
 
@@ -194,11 +378,11 @@ function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          rainfall,
-          slope,
-          elevation,
-          soil_moisture: soilMoisture,
-          vegetation_loss: vegetationLoss,
+          rainfall: analysisInputs.rainfall,
+          slope: analysisInputs.slope,
+          elevation: analysisInputs.elevation,
+          soil_moisture: analysisInputs.soilMoisture,
+          vegetation_loss: analysisInputs.vegetationLoss,
         }),
       });
 
@@ -207,26 +391,33 @@ function App() {
       }
 
       const data = await response.json();
+
       setResult(data);
+      setEngineMode("API");
     } catch {
+      const localResult = calculateLocalRisk(analysisInputs);
+
+      setResult(localResult);
+      setEngineMode("LOCAL");
       setApiError(
-        "Risk engine unavailable. Start the backend or use the local simulation.",
+        "Remote risk engine unavailable. Showing the built-in prototype engine.",
       );
     } finally {
       setLoading(false);
     }
   }
 
-  async function simulateHeavyRain() {
-    const simulatedRainfall = Math.min(rainfall + 75, 500);
-    const simulatedMoisture = Math.min(soilMoisture + 12, 100);
+  function simulateHeavyRain() {
+    const simulatedInputs: Inputs = {
+      ...inputs,
+      rainfall: Math.min(inputs.rainfall + 75, 500),
+      soilMoisture: Math.min(inputs.soilMoisture + 12, 100),
+    };
 
-    setRainfall(simulatedRainfall);
-    setSoilMoisture(simulatedMoisture);
+    setRainfall(simulatedInputs.rainfall);
+    setSoilMoisture(simulatedInputs.soilMoisture);
 
-    setTimeout(() => {
-      analyseRisk();
-    }, 100);
+    void analyseRisk(simulatedInputs);
   }
 
   function resetSignals() {
@@ -275,14 +466,15 @@ function App() {
             </h1>
 
             <p className="hero-text">
-              An explainable risk-intelligence system combining terrain and
-              environmental signals to support earlier landslide decisions.
+              An explainable landslide risk-intelligence prototype that
+              converts environmental signals into a prioritized operational
+              decision.
             </p>
 
             <div className="hero-actions">
               <button
                 className="primary-button"
-                onClick={analyseRisk}
+                onClick={() => void analyseRisk()}
                 disabled={loading}
               >
                 {loading ? (
@@ -298,7 +490,11 @@ function App() {
                 )}
               </button>
 
-              <button className="ghost-button" onClick={simulateHeavyRain}>
+              <button
+                className="ghost-button"
+                onClick={simulateHeavyRain}
+                disabled={loading}
+              >
                 <CloudRain size={17} />
                 SIMULATE HEAVY RAIN
               </button>
@@ -307,11 +503,15 @@ function App() {
 
           <div className={`hero-risk ${riskClass(result.risk_level)}`}>
             <span>CURRENT MODEL RISK</span>
+
             <strong>
               {result.risk_score > 0 ? result.risk_score : "--"}
             </strong>
+
             <small>
-              {result.risk_score > 0 ? result.risk_level : "AWAITING ANALYSIS"}
+              {result.risk_score > 0
+                ? result.risk_level
+                : "AWAITING ANALYSIS"}
             </small>
           </div>
         </section>
@@ -333,7 +533,9 @@ function App() {
               <button
                 key={location.name}
                 className={`location-card ${
-                  selectedLocation.name === location.name ? "selected" : ""
+                  selectedLocation.name === location.name
+                    ? "selected"
+                    : ""
                 }`}
                 onClick={() => selectLocation(location)}
               >
@@ -374,47 +576,26 @@ function App() {
               <h2>Regional risk field</h2>
             </div>
 
-            <span className="section-meta">NER / prototype visualization</span>
+            <span className="section-meta">
+              NER / prototype visualization
+            </span>
           </div>
 
           <div className="map-panel">
-            <div className="map-background">
-              <div className="terrain terrain-one" />
-              <div className="terrain terrain-two" />
-              <div className="terrain terrain-three" />
-
-              {locations.map((location, index) => {
-                const risk =
-                  index === 0 ? "critical" :
-                  index === 1 ? "high" :
-                  index === 2 ? "moderate" :
-                  "low";
-
-                return (
-                  <button
-                    key={location.name}
-                    className={`map-point ${risk}`}
-                    style={{
-                      left: `${25 + index * 17}%`,
-                      top: `${28 + (index % 2) * 24}%`,
-                    }}
-                    onClick={() => selectLocation(location)}
-                    title={location.name}
-                  >
-                    <span />
-                    <b>{location.name}</b>
-                  </button>
+            <RiskMap
+              locations={locations}
+              selected={selectedLocation.name}
+              riskLevel={result.risk_level}
+              onSelect={(name) => {
+                const location = locations.find(
+                  (item) => item.name === name,
                 );
-              })}
 
-              <div className="map-label top-left">
-                NORTH EASTERN REGION
-              </div>
-
-              <div className="map-label bottom-right">
-                SIMULATED TERRAIN LAYER
-              </div>
-            </div>
+                if (location) {
+                  selectLocation(location);
+                }
+              }}
+            />
 
             <div className="map-side">
               <div className="map-side-header">
@@ -447,12 +628,15 @@ function App() {
                 <span>
                   <i className="dot low" /> Low
                 </span>
+
                 <span>
                   <i className="dot moderate" /> Moderate
                 </span>
+
                 <span>
                   <i className="dot high" /> High
                 </span>
+
                 <span>
                   <i className="dot critical" /> Critical
                 </span>
@@ -532,24 +716,45 @@ function App() {
               <div className="analysis-buttons">
                 <button
                   className="primary-button full"
-                  onClick={analyseRisk}
+                  onClick={() => void analyseRisk()}
                   disabled={loading}
                 >
                   <Gauge size={17} />
                   {loading ? "PROCESSING..." : "ANALYZE SIGNALS"}
                 </button>
 
-                <button className="reset-button" onClick={resetSignals}>
+                <button
+                  className="reset-button"
+                  onClick={resetSignals}
+                >
                   RESET
                 </button>
               </div>
 
-              {apiError && <div className="error-box">{apiError}</div>}
+              <div className="engine-indicator">
+                <span>ACTIVE ENGINE</span>
+                <strong>
+                  {engineMode === "API"
+                    ? "REMOTE RISK API"
+                    : "LOCAL PROTOTYPE"}
+                </strong>
+              </div>
+
+              {apiError && (
+                <div className="error-box">
+                  {apiError}
+                </div>
+              )}
             </div>
 
-            <div className={`result-panel ${riskClass(result.risk_level)}`}>
+            <div
+              className={`result-panel ${riskClass(
+                result.risk_level,
+              )}`}
+            >
               <div className="result-header">
                 <span>RISK ASSESSMENT</span>
+
                 {result.risk_level === "CRITICAL" ||
                 result.risk_level === "HIGH" ? (
                   <ShieldAlert size={20} />
@@ -565,9 +770,13 @@ function App() {
                     <span>/ 100</span>
                   </div>
 
-                  <div className="risk-badge">{result.risk_level}</div>
+                  <div className="risk-badge">
+                    {result.risk_level}
+                  </div>
 
-                  <p className="result-severity">{result.severity}</p>
+                  <p className="result-severity">
+                    {result.severity}
+                  </p>
 
                   <div className="confidence">
                     <span>MODEL CONFIDENCE</span>
@@ -578,7 +787,10 @@ function App() {
                     <h4>DOMINANT SIGNALS</h4>
 
                     {result.factors.slice(0, 4).map((factor) => (
-                      <div className="factor" key={factor.name}>
+                      <div
+                        className="factor"
+                        key={factor.name}
+                      >
                         <div>
                           <span>{factor.name}</span>
                           <small>{factor.value}</small>
@@ -592,9 +804,12 @@ function App() {
               ) : (
                 <div className="waiting-state">
                   <Activity size={34} />
+
                   <h3>Awaiting analysis</h3>
+
                   <p>
-                    Adjust the environmental signals and run the risk engine.
+                    Adjust the environmental signals and run
+                    the risk engine.
                   </p>
                 </div>
               )}
@@ -606,7 +821,10 @@ function App() {
           <section className="section decision-section">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">04 / DECISION INTELLIGENCE</p>
+                <p className="eyebrow">
+                  04 / DECISION INTELLIGENCE
+                </p>
+
                 <h2>From prediction to action</h2>
               </div>
             </div>
@@ -619,7 +837,9 @@ function App() {
                   <AlertTriangle size={20} />
                 </div>
 
-                <h3>{topFactor?.name || "No dominant factor"}</h3>
+                <h3>
+                  {topFactor?.name || "No dominant factor"}
+                </h3>
 
                 <p>
                   {topFactor
@@ -658,8 +878,8 @@ function App() {
                 </h3>
 
                 <p>
-                  Risk intelligence translated into an operational response
-                  level.
+                  Risk intelligence translated into an
+                  operational response level.
                 </p>
               </div>
             </div>
@@ -669,12 +889,16 @@ function App() {
         <section className="prototype-note">
           <div>
             <span>DATA STATUS</span>
-            <strong>Prototype / simulated environmental inputs</strong>
+
+            <strong>
+              Prototype / simulated environmental inputs
+            </strong>
           </div>
 
           <p>
-            This demonstration uses simulated inputs. Real deployment would
-            integrate meteorological, satellite, terrain and historical
+            This demonstration uses simulated inputs. Real
+            deployment would integrate meteorological,
+            satellite, terrain, geological and historical
             landslide datasets.
           </p>
         </section>
