@@ -14,7 +14,6 @@ def normalize(
     minimum: float,
     maximum: float
 ) -> float:
-
     if maximum <= minimum:
         return 0.0
 
@@ -31,6 +30,10 @@ def calculate_risk(
     vegetation_loss: float,
 ) -> Dict[str, Any]:
 
+    # ---------------------------------------------------------
+    # NORMALIZED ENVIRONMENTAL SIGNALS
+    # ---------------------------------------------------------
+
     rainfall_score = normalize(
         rainfall,
         0,
@@ -41,12 +44,6 @@ def calculate_risk(
         slope,
         0,
         45
-    )
-
-    elevation_score = normalize(
-        elevation,
-        0,
-        2500
     )
 
     moisture_score = normalize(
@@ -61,11 +58,32 @@ def calculate_risk(
         100
     )
 
+    # Elevation is retained as terrain context.
+    # It is NOT directly treated as a risk multiplier.
+    elevation_score = normalize(
+        elevation,
+        0,
+        2500
+    )
+
+    # ---------------------------------------------------------
+    # RISK SCORE
+    # ---------------------------------------------------------
+    #
+    # Current prototype weighting:
+    #
+    # Rainfall       30%
+    # Slope          30%
+    # Soil moisture 25%
+    # Vegetation    15%
+    #
+    # Elevation is contextual rather than directly weighted.
+    # ---------------------------------------------------------
+
     weighted_score = (
         rainfall_score * 0.30
-        + slope_score * 0.25
-        + elevation_score * 0.10
-        + moisture_score * 0.20
+        + slope_score * 0.30
+        + moisture_score * 0.25
         + vegetation_score * 0.15
     )
 
@@ -73,6 +91,10 @@ def calculate_risk(
         weighted_score * 100,
         1
     )
+
+    # ---------------------------------------------------------
+    # RISK CLASSIFICATION
+    # ---------------------------------------------------------
 
     if risk_score < 25:
         risk_level = "LOW"
@@ -89,6 +111,10 @@ def calculate_risk(
     else:
         risk_level = "CRITICAL"
         severity = "Immediate assessment recommended"
+
+    # ---------------------------------------------------------
+    # CONTRIBUTING FACTORS
+    # ---------------------------------------------------------
 
     factors = []
 
@@ -148,6 +174,9 @@ def calculate_risk(
             "value": f"{vegetation_loss:.0f}%"
         })
 
+    # Elevation is reported as context rather than a direct
+    # contributor to the risk score.
+
     if elevation_score >= 0.70:
 
         factors.append({
@@ -164,15 +193,27 @@ def calculate_risk(
             "value": "Stable"
         })
 
+    # ---------------------------------------------------------
+    # PROTOTYPE CONFIDENCE
+    # ---------------------------------------------------------
+
+    confidence = round(
+        72 + min(16, len(factors) * 4),
+        1
+    )
+
+    # ---------------------------------------------------------
+    # RESPONSE
+    # ---------------------------------------------------------
+
     return {
         "risk_score": risk_score,
         "risk_level": risk_level,
         "severity": severity,
-        "confidence": round(
-            72 + min(16, len(factors) * 4),
-            1
-        ),
+        "confidence": confidence,
+
         "factors": factors,
+
         "inputs": {
             "rainfall": rainfall,
             "slope": slope,
